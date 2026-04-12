@@ -1,0 +1,37 @@
+:root {
+  --app-bg: #f5f7fa;
+  --panel-bg: #ffffff;
+  --sidebar-bg: #111827;
+  --header-bg: rgba(255, 255, 255, 0.78);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-on-dark: #f8fafc;
+
+  --color-primary: #0f172a;
+  --color-accent: #2563eb;
+  --color-accent-soft: #dbeafe;
+
+  --state-pending: #94a3b8;
+  --state-running: #f59e0b;
+  --state-completed: #10b981;
+  --state-failed: #ef4444;
+
+  --border-color: #e2e8f0;
+  --divider-color: #f1f5f9;
+
+  --font-sans: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+
+  --shadow-sm: 0 8px 20px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 18px 38px rgba(15, 23, 42, 0.09);
+
+  --el-color-primary: var(--color-accent);
+  --el-font-family: var(--font-sans);
+  --el-border-radius-base: var(--radius-sm);
+}

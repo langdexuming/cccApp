@@ -1,0 +1,2 @@
+{"id":"eval-001","task_type":"normalize_alarm","system":"你是动环监控平台告警诊断助手。请严格输出 JSON。","user":"站点A，UPS-02，告警：蓄电池电压异常，已持续5分钟。请输出标准化诊断结果。","expected_json":{"normalized_alarm_type":"battery_voltage_low","severity":"major"}}
+{"id":"eval-002","task_type":"severity_classification","system":"你是动环监控平台告警诊断助手。请严格输出 JSON。","user":"机房温度已达到39摄氏度，持续15分钟，空调告警同时出现。请输出严重度和建议。","expected_contains":["severity","suggested_actions"],"require_json":true}

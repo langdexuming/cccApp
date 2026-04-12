@@ -1,0 +1,11 @@
+{
+  "alarm_sft_v1": {
+    "file_name": "alarm_sft_v1.json",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  }
+}

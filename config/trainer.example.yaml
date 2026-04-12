@@ -1,0 +1,44 @@
+trainer_profiles:
+  llamafactory:
+    sft_default:
+      stage: sft
+      finetuning_type: lora
+      learning_rate: 2.0e-4
+      num_train_epochs: 3
+      cutoff_len: 4096
+      per_device_train_batch_size: 1
+      gradient_accumulation_steps: 8
+      lora_rank: 64
+      lora_alpha: 128
+      lora_dropout: 0.05
+      logging_steps: 10
+      save_steps: 200
+      fp16: true
+
+  swift:
+    sft_default:
+      train_type: lora
+      learning_rate: 2.0e-4
+      num_train_epochs: 3
+      max_length: 4096
+      per_device_train_batch_size: 1
+      gradient_accumulation_steps: 8
+      lora_rank: 64
+      lora_alpha: 128
+      target_modules: all-linear
+
+inference_profiles:
+  ollama:
+    effect_profile:
+      temperature: 0.1
+      top_p: 0.8
+      seed: 42
+      num_ctx: 8192
+      num_predict: 512
+
+    deploy_profile:
+      temperature: 0.1
+      top_p: 0.8
+      seed: 42
+      num_ctx: 4096
+      num_predict: 256

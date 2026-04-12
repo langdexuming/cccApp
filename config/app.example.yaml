@@ -1,0 +1,25 @@
+app:
+  name: ai-trains
+  env: dev
+  host: 127.0.0.1
+  port: 18080
+  log_level: INFO
+
+database:
+  url: sqlite:///E:/ai/ai_trains/runtime/sqlite/app.db
+
+runtime:
+  max_concurrent_train_runs: 1
+  max_concurrent_eval_runs: 2
+  default_inference_backend: ollama
+  default_trainer_backend: llamafactory
+
+ollama:
+  base_url: http://127.0.0.1:11434
+  timeout_seconds: 300
+  keep_alive: 10m
+
+report:
+  output_format:
+    - json
+    - html

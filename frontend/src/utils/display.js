@@ -29,6 +29,7 @@ export function formatStepText(step) {
     prepare: '准备数据',
     train: '模型训练',
     export: '导出模型',
+    gguf_convert: '转换 GGUF',
     ollama_register: '注册 Ollama',
     eval: '评测验证',
     benchmark: '基准对比',

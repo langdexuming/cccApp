@@ -138,9 +138,27 @@ const LLAMA_FACTORY_TRAIN_PRESET = {
 }
 
 const LLAMA_FACTORY_INFER_PRESET = {
-  skip_ollama: true,
-  skip_eval: true,
-  skip_benchmark: true,
+  auto_gguf: true,
+  gguf_outtype: 'f16',
+  skip_ollama: false,
+  skip_eval: false,
+  skip_benchmark: false,
+  keep_alive: '10m',
+  system_prompt:
+    '/no_think\n你是动环监控平台告警诊断助手，请基于告警摘要输出诊断结论、处理建议和成因分析，不要输出无关前言。',
+  parameters: {
+    temperature: 0.1,
+    top_p: 0.8,
+    seed: 42,
+    num_ctx: 8192,
+  },
+  options: {
+    temperature: 0.1,
+    top_p: 0.8,
+    seed: 42,
+    num_ctx: 8192,
+    num_predict: 512,
+  },
 }
 
 const SWIFT_PREVIEW_TRAIN_PRESET = {

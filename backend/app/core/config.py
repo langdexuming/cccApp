@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -65,6 +66,14 @@ class Settings(BaseModel):
     tmp_root: Path = Path("E:/") / ".env_trains" / "tmp"
     ollama_models_root: Path = Path("E:/") / ".env_trains" / "cache" / "ollama"
     llamafactory_cli_path: Path = Path("E:/") / ".env_trains" / "venvs" / "lf-py311" / "Scripts" / "llamafactory-cli.exe"
+    worker_python_path: Path = Path(sys.executable)
+    llama_cpp_root: Path = Path("E:/") / ".env_trains" / "src" / "llama.cpp"
+    gguf_converter_script_path: Path = Path("E:/") / ".env_trains" / "src" / "llama.cpp" / "convert_hf_to_gguf.py"
+    gguf_quantize_cli_path: Path = (
+        Path("E:/") / ".env_trains" / "src" / "llama.cpp" / "build" / "bin" / "Release" / "llama-quantize.exe"
+    )
+    gguf_artifacts_root: Path = REPO_ROOT / "runtime" / "artifacts" / "gguf"
+    gguf_default_outtype: str = "f16"
     ollama_cli_path: str = "ollama"
 
     default_trainer_backend: str = "llamafactory"
@@ -103,6 +112,7 @@ class Settings(BaseModel):
             self.modelscope_cache_root / "datasets",
             self.tmp_root,
             self.ollama_models_root,
+            self.gguf_artifacts_root,
         ):
             path.mkdir(parents=True, exist_ok=True)
 
@@ -184,6 +194,24 @@ def _build_settings() -> Settings:
                 Path("E:/") / ".env_trains" / "venvs" / "lf-py311" / "Scripts" / "llamafactory-cli.exe",
             )
         ),
+        worker_python_path=Path(paths_section.get("worker_python_path", sys.executable)),
+        llama_cpp_root=Path(paths_section.get("llama_cpp_root", "E:/.env_trains/src/llama.cpp")),
+        gguf_converter_script_path=Path(
+            paths_section.get(
+                "gguf_converter_script_path",
+                "E:/.env_trains/src/llama.cpp/convert_hf_to_gguf.py",
+            )
+        ),
+        gguf_quantize_cli_path=Path(
+            paths_section.get(
+                "gguf_quantize_cli_path",
+                "E:/.env_trains/src/llama.cpp/build/bin/Release/llama-quantize.exe",
+            )
+        ),
+        gguf_artifacts_root=Path(
+            paths_section.get("gguf_artifacts_root", REPO_ROOT / "runtime" / "artifacts" / "gguf")
+        ),
+        gguf_default_outtype=str(paths_section.get("gguf_default_outtype", "f16")),
         ollama_cli_path=str(paths_section.get("ollama_cli_path", "ollama")),
         default_trainer_backend=runtime_section.get("default_trainer_backend", "llamafactory"),
         default_inference_backend=runtime_section.get("default_inference_backend", "ollama"),

@@ -1,6 +1,9 @@
 param(
-    [string]$VenvPath = "E:\.env_trains\venvs\lf-py311"
+    [string]$VenvPath = "E:\.env_trains\venvs\lf-py311",
+    [string]$EnvRoot = "E:\.env_trains"
 )
+
+. (Join-Path $PSScriptRoot "00-apply-cache-env.ps1") -EnvRoot $EnvRoot
 
 $VenvPython = Join-Path $VenvPath "Scripts\python.exe"
 $LFCli = Join-Path $VenvPath "Scripts\llamafactory-cli.exe"

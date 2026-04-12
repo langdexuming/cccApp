@@ -78,6 +78,80 @@ def _append_worker_log(log_path: Path, message: str) -> None:
         handle.write(f"{utcnow().isoformat()} {message}\n")
 
 
+def _append_pipeline_log(
+    log_path: Path,
+    *,
+    step: str,
+    status: str,
+    detail: str,
+    steps: list[dict[str, Any]] | None = None,
+    summary_path: Path | None = None,
+) -> None:
+    timestamp = utcnow().isoformat()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{timestamp} [{status}] {step}: {detail}\n")
+
+    if steps is None:
+        return
+
+    entry = {
+        "timestamp": timestamp,
+        "step": step,
+        "status": status,
+        "detail": detail,
+    }
+    steps.append(entry)
+    if summary_path is not None:
+        summary_path.write_text(dumps_json({"steps": steps}), encoding="utf-8")
+
+
+def _detect_gguf_status(
+    *,
+    experiment: Experiment,
+    output_dir: Path,
+    infer_config: dict[str, Any],
+) -> tuple[str, str, Path | None]:
+    configured_gguf_path = infer_config.get("gguf_path")
+    if configured_gguf_path:
+        gguf_path = Path(str(configured_gguf_path))
+        if gguf_path.exists():
+            return "COMPLETED", f"path={gguf_path}", gguf_path
+        return "BLOCKED", f"configured gguf_path not found path={gguf_path}", None
+
+    local_gguf = output_dir / "model.gguf"
+    if local_gguf.exists():
+        return "COMPLETED", f"path={local_gguf}", local_gguf
+
+    if infer_config.get("ollama_registered_model") or infer_config.get("ollama_from_model"):
+        return "SKIPPED", "reusing existing Ollama model; GGUF conversion not required", None
+
+    merged_dir = output_dir / "merged"
+    if merged_dir.exists():
+        if experiment.trainer_backend == "swift":
+            return "PLANNED", f"merged model is ready for future ms-swift handoff. merged_dir={merged_dir}", None
+        return "PLANNED", f"merged model is ready; auto GGUF conversion is not wired yet. merged_dir={merged_dir}", None
+
+    return "SKIPPED", "no merged model or GGUF artifact detected", None
+
+
+def _detect_vllm_status(
+    *,
+    output_dir: Path,
+    infer_config: dict[str, Any],
+) -> tuple[str, str]:
+    if infer_config.get("skip_vllm"):
+        return "SKIPPED", "infer_config.skip_vllm=true"
+
+    merged_dir = output_dir / "merged"
+    if merged_dir.exists():
+        served_model_name = infer_config.get("vllm_served_model_name") or infer_config.get("vllm_model_name")
+        served_suffix = f" served_model={served_model_name}" if served_model_name else ""
+        return "PLANNED", f"merged model is ready for vLLM serve. model_dir={merged_dir}{served_suffix}"
+
+    return "SKIPPED", "no merged model directory available for vLLM"
+
+
 def _require_command(command_args: list[str] | None, stage: str) -> list[str]:
     if not command_args:
         raise RuntimeError(f"No command arguments provided for stage: {stage}")
@@ -180,6 +254,20 @@ def process_run(run_id: str) -> None:
         run_dir = settings.runs_root / run.id
         _, _, log_dir = _step_dirs(run_dir)
         log_path = log_dir / "worker.log"
+        pipeline_log_path = log_dir / "automation_pipeline.log"
+        pipeline_summary_path = log_dir / "automation_pipeline.json"
+        pipeline_steps: list[dict[str, Any]] = []
+        _append_pipeline_log(
+            pipeline_log_path,
+            step="RUN",
+            status="STARTED",
+            detail=(
+                f"run_id={run.id} experiment_id={run.experiment_id} "
+                f"trainer_backend={experiment.trainer_backend} route_type={experiment.route_type}"
+            ),
+            steps=pipeline_steps,
+            summary_path=pipeline_summary_path,
+        )
 
         run.status = "running"
         run.current_step = "prepare"
@@ -226,6 +314,8 @@ def process_run(run_id: str) -> None:
                 encoding="utf-8",
             )
             _write_artifact(session, run.id, "worker_log", log_path)
+            _write_artifact(session, run.id, "automation_pipeline_log", pipeline_log_path)
+            _write_artifact(session, run.id, "automation_pipeline_summary", pipeline_summary_path)
             _write_artifact(session, run.id, "run_manifest", manifest_path)
 
             for file_path in prepared.extra_files:
@@ -246,6 +336,14 @@ def process_run(run_id: str) -> None:
             preview_path.write_text(dumps_json(preview_payload), encoding="utf-8")
             _write_artifact(session, run.id, "command_preview", preview_path)
             _append_worker_log(log_path, f"Prepare finished. trainer_backend={prepared.trainer_backend}")
+            _append_pipeline_log(
+                pipeline_log_path,
+                step="PREPARE",
+                status="COMPLETED",
+                detail=f"trainer_backend={prepared.trainer_backend} preview_path={preview_path}",
+                steps=pipeline_steps,
+                summary_path=pipeline_summary_path,
+            )
 
             session.commit()
 
@@ -261,6 +359,14 @@ def process_run(run_id: str) -> None:
                 _write_artifact(session, run.id, "train_log", train_log_path)
                 session.commit()
                 _append_worker_log(log_path, f"Train step started. log={train_log_path}")
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="TRAIN",
+                    status="STARTED",
+                    detail=f"log={train_log_path}",
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
                 run_and_log(
                     command=train_command,
                     cwd=context.run_dir,
@@ -271,10 +377,27 @@ def process_run(run_id: str) -> None:
                 if adapter_dir.exists():
                     _write_artifact(session, run.id, "adapter_dir", adapter_dir)
                 _append_worker_log(log_path, f"Train step completed. adapter_dir={adapter_dir}")
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="TRAIN",
+                    status="COMPLETED",
+                    detail=f"adapter_dir={adapter_dir}",
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
                 _write_metric(session, run.id, "train", "train_executed", 1.0)
                 session.commit()
             else:
                 _append_worker_log(log_path, "Train step skipped for baseline inference route.")
+                skip_detail = "preview-only adapter does not execute train" if prepared.meta.get("preview_only") else "route does not require training"
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="TRAIN",
+                    status="SKIPPED",
+                    detail=skip_detail,
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
                 _write_metric(session, run.id, "train", "train_executed", 0.0)
                 session.commit()
 
@@ -287,6 +410,14 @@ def process_run(run_id: str) -> None:
                 _write_artifact(session, run.id, "export_log", export_log_path)
                 session.commit()
                 _append_worker_log(log_path, f"Export step started. log={export_log_path}")
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="EXPORT",
+                    status="STARTED",
+                    detail=f"log={export_log_path}",
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
                 run_and_log(
                     command=export_command,
                     cwd=context.run_dir,
@@ -297,12 +428,59 @@ def process_run(run_id: str) -> None:
                 if merged_dir.exists():
                     _write_artifact(session, run.id, "merged_model_dir", merged_dir)
                 _append_worker_log(log_path, f"Export step completed. merged_dir={merged_dir}")
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="EXPORT",
+                    status="COMPLETED",
+                    detail=f"merged_dir={merged_dir}",
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
                 _write_metric(session, run.id, "train", "export_executed", 1.0)
                 session.commit()
             else:
                 _append_worker_log(log_path, "Export step skipped.")
+                skip_detail = "preview-only adapter does not execute export" if prepared.meta.get("preview_only") else "adapter cannot export for this route"
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="EXPORT",
+                    status="SKIPPED",
+                    detail=skip_detail,
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
                 _write_metric(session, run.id, "train", "export_executed", 0.0)
                 session.commit()
+
+            gguf_status, gguf_detail, gguf_path = _detect_gguf_status(
+                experiment=experiment,
+                output_dir=output_dir,
+                infer_config=infer_config,
+            )
+            if gguf_path is not None:
+                _write_artifact(session, run.id, "gguf_model", gguf_path)
+            _append_pipeline_log(
+                pipeline_log_path,
+                step="GGUF",
+                status=gguf_status,
+                detail=gguf_detail,
+                steps=pipeline_steps,
+                summary_path=pipeline_summary_path,
+            )
+            session.commit()
+
+            vllm_status, vllm_detail = _detect_vllm_status(
+                output_dir=output_dir,
+                infer_config=infer_config,
+            )
+            _append_pipeline_log(
+                pipeline_log_path,
+                step="VLLM_REGISTER",
+                status=vllm_status,
+                detail=vllm_detail,
+                steps=pipeline_steps,
+                summary_path=pipeline_summary_path,
+            )
 
             ollama_summary: dict[str, Any] | None = None
             eval_summary: dict[str, Any] | None = None
@@ -312,20 +490,47 @@ def process_run(run_id: str) -> None:
                 run.current_step = "ollama_register"
                 session.add(run)
                 session.commit()
-
-                model_name, modelfile_path = _register_ollama_model(
-                    settings=settings,
-                    experiment=experiment,
-                    run=run,
-                    run_dir=run_dir,
-                    output_dir=output_dir,
-                    infer_config=infer_config,
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="OLLAMA_REGISTER",
+                    status="STARTED",
+                    detail="creating local Ollama model",
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
                 )
+
+                try:
+                    model_name, modelfile_path = _register_ollama_model(
+                        settings=settings,
+                        experiment=experiment,
+                        run=run,
+                        run_dir=run_dir,
+                        output_dir=output_dir,
+                        infer_config=infer_config,
+                    )
+                except Exception as exc:
+                    _append_pipeline_log(
+                        pipeline_log_path,
+                        step="OLLAMA_REGISTER",
+                        status="FAILED",
+                        detail=str(exc),
+                        steps=pipeline_steps,
+                        summary_path=pipeline_summary_path,
+                    )
+                    raise
                 ollama_log_path = run_dir / "logs" / "ollama-create.log"
                 _write_artifact(session, run.id, "ollama_modelfile", modelfile_path)
                 _write_artifact(session, run.id, "ollama_create_log", ollama_log_path)
                 _append_worker_log(log_path, f"Ollama model registered. model_name={model_name}")
                 ollama_summary = {"model_name": model_name, "modelfile_path": str(modelfile_path)}
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="OLLAMA_REGISTER",
+                    status="COMPLETED",
+                    detail=f"model_name={model_name} modelfile={modelfile_path}",
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
                 _write_metric(session, run.id, "benchmark", "ollama_registered", 1.0, ollama_summary)
                 session.commit()
 
@@ -342,17 +547,36 @@ def process_run(run_id: str) -> None:
                     run.current_step = "eval"
                     session.add(run)
                     session.commit()
+                    _append_pipeline_log(
+                        pipeline_log_path,
+                        step="EVAL",
+                        status="STARTED",
+                        detail=f"dataset={eval_path}",
+                        steps=pipeline_steps,
+                        summary_path=pipeline_summary_path,
+                    )
 
                     eval_output_path = run_dir / "eval" / "eval_results.jsonl"
-                    eval_summary = run_eval_suite(
-                        client=client,
-                        model_name=model_name,
-                        dataset_path=eval_path,
-                        output_path=eval_output_path,
-                        options=options,
-                        fmt=fmt,
-                        keep_alive=keep_alive,
-                    )
+                    try:
+                        eval_summary = run_eval_suite(
+                            client=client,
+                            model_name=model_name,
+                            dataset_path=eval_path,
+                            output_path=eval_output_path,
+                            options=options,
+                            fmt=fmt,
+                            keep_alive=keep_alive,
+                        )
+                    except Exception as exc:
+                        _append_pipeline_log(
+                            pipeline_log_path,
+                            step="EVAL",
+                            status="FAILED",
+                            detail=str(exc),
+                            steps=pipeline_steps,
+                            summary_path=pipeline_summary_path,
+                        )
+                        raise
                     summary_path = run_dir / "eval" / "eval_summary.json"
                     summary_path.write_text(dumps_json(eval_summary), encoding="utf-8")
                     _write_artifact(session, run.id, "eval_results", eval_output_path)
@@ -361,23 +585,68 @@ def process_run(run_id: str) -> None:
                         if metric_value is not None:
                             _write_metric(session, run.id, "eval", metric_name, float(metric_value))
                     _append_worker_log(log_path, f"Eval step completed. summary_path={summary_path}")
+                    _append_pipeline_log(
+                        pipeline_log_path,
+                        step="EVAL",
+                        status="COMPLETED",
+                        detail=(
+                            f"summary_path={summary_path} "
+                            f"contains_accuracy={eval_summary.get('contains_accuracy')} "
+                            f"json_valid_rate={eval_summary.get('json_valid_rate')}"
+                        ),
+                        steps=pipeline_steps,
+                        summary_path=pipeline_summary_path,
+                    )
                     session.commit()
+                else:
+                    eval_skip_reason = (
+                        "infer_config.skip_eval=true"
+                        if infer_config.get("skip_eval", False)
+                        else f"eval dataset not found path={eval_path}"
+                    )
+                    _append_pipeline_log(
+                        pipeline_log_path,
+                        step="EVAL",
+                        status="SKIPPED",
+                        detail=eval_skip_reason,
+                        steps=pipeline_steps,
+                        summary_path=pipeline_summary_path,
+                    )
 
                 if not infer_config.get("skip_benchmark", False) and benchmark_path.exists():
                     run.current_step = "benchmark"
                     session.add(run)
                     session.commit()
+                    _append_pipeline_log(
+                        pipeline_log_path,
+                        step="BENCHMARK",
+                        status="STARTED",
+                        detail=f"dataset={benchmark_path}",
+                        steps=pipeline_steps,
+                        summary_path=pipeline_summary_path,
+                    )
 
                     bench_output_path = run_dir / "benchmark" / "benchmark_results.jsonl"
-                    benchmark_summary = run_benchmark_suite(
-                        client=client,
-                        model_name=model_name,
-                        dataset_path=benchmark_path,
-                        output_path=bench_output_path,
-                        options=options,
-                        fmt=fmt,
-                        keep_alive=keep_alive,
-                    )
+                    try:
+                        benchmark_summary = run_benchmark_suite(
+                            client=client,
+                            model_name=model_name,
+                            dataset_path=benchmark_path,
+                            output_path=bench_output_path,
+                            options=options,
+                            fmt=fmt,
+                            keep_alive=keep_alive,
+                        )
+                    except Exception as exc:
+                        _append_pipeline_log(
+                            pipeline_log_path,
+                            step="BENCHMARK",
+                            status="FAILED",
+                            detail=str(exc),
+                            steps=pipeline_steps,
+                            summary_path=pipeline_summary_path,
+                        )
+                        raise
                     summary_path = run_dir / "benchmark" / "benchmark_summary.json"
                     summary_path.write_text(dumps_json(benchmark_summary), encoding="utf-8")
                     _write_artifact(session, run.id, "benchmark_results", bench_output_path)
@@ -386,12 +655,71 @@ def process_run(run_id: str) -> None:
                         if metric_value is not None:
                             _write_metric(session, run.id, "benchmark", metric_name, float(metric_value))
                     _append_worker_log(log_path, f"Benchmark step completed. summary_path={summary_path}")
+                    _append_pipeline_log(
+                        pipeline_log_path,
+                        step="BENCHMARK",
+                        status="COMPLETED",
+                        detail=(
+                            f"summary_path={summary_path} "
+                            f"avg_total_ms={benchmark_summary.get('avg_total_ms')} "
+                            f"avg_eval_tokens_per_sec={benchmark_summary.get('avg_eval_tokens_per_sec')}"
+                        ),
+                        steps=pipeline_steps,
+                        summary_path=pipeline_summary_path,
+                    )
                     session.commit()
+                else:
+                    benchmark_skip_reason = (
+                        "infer_config.skip_benchmark=true"
+                        if infer_config.get("skip_benchmark", False)
+                        else f"benchmark dataset not found path={benchmark_path}"
+                    )
+                    _append_pipeline_log(
+                        pipeline_log_path,
+                        step="BENCHMARK",
+                        status="SKIPPED",
+                        detail=benchmark_skip_reason,
+                        steps=pipeline_steps,
+                        summary_path=pipeline_summary_path,
+                    )
+            else:
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="OLLAMA_REGISTER",
+                    status="SKIPPED",
+                    detail="infer_config.skip_ollama=true",
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="EVAL",
+                    status="SKIPPED",
+                    detail="offline eval depends on Ollama registration in phase 1",
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
+                _append_pipeline_log(
+                    pipeline_log_path,
+                    step="BENCHMARK",
+                    status="SKIPPED",
+                    detail="benchmark depends on Ollama registration in phase 1",
+                    steps=pipeline_steps,
+                    summary_path=pipeline_summary_path,
+                )
 
             run.current_step = "report"
             session.add(run)
             session.commit()
             _append_worker_log(log_path, "Report generation started.")
+            _append_pipeline_log(
+                pipeline_log_path,
+                step="REPORT",
+                status="STARTED",
+                detail="building run report",
+                steps=pipeline_steps,
+                summary_path=pipeline_summary_path,
+            )
 
             run.status = "completed"
             run.current_step = "completed"
@@ -410,6 +738,11 @@ def process_run(run_id: str) -> None:
                 ollama=ollama_summary,
                 evaluation=eval_summary,
                 benchmark=benchmark_summary,
+                automation_pipeline={
+                    "log_path": str(pipeline_log_path),
+                    "summary_path": str(pipeline_summary_path),
+                    "steps": pipeline_steps,
+                },
             )
             _write_artifact(session, run.id, "run_report", report_path)
             _write_metric(
@@ -425,11 +758,34 @@ def process_run(run_id: str) -> None:
             session.add(experiment)
             session.commit()
             _append_worker_log(log_path, "Run completed successfully.")
+            _append_pipeline_log(
+                pipeline_log_path,
+                step="REPORT",
+                status="COMPLETED",
+                detail=f"report_path={report_path}",
+                steps=pipeline_steps,
+                summary_path=pipeline_summary_path,
+            )
+            _append_pipeline_log(
+                pipeline_log_path,
+                step="RUN",
+                status="COMPLETED",
+                detail=f"run_id={run.id} status=completed",
+                steps=pipeline_steps,
+                summary_path=pipeline_summary_path,
+            )
             LOGGER.info("Processed run %s", run.id)
     except Exception as exc:  # pragma: no cover
         LOGGER.exception("Run processing failed: %s", run_id)
         failed_log_path = settings.runs_root / run_id / "logs" / "worker.log"
+        failed_pipeline_log_path = settings.runs_root / run_id / "logs" / "automation_pipeline.log"
         _append_worker_log(failed_log_path, f"Run failed. error={exc}")
+        _append_pipeline_log(
+            failed_pipeline_log_path,
+            step="RUN",
+            status="FAILED",
+            detail=f"error={exc}",
+        )
         with Session(engine) as session:
             run = session.get(Run, run_id)
             if run is not None:

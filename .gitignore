@@ -20,6 +20,12 @@ E:/wsl/
 .edge-debug*/
 edge_*.png
 *.zip
+resources/screenshots/
+resources/~$*.pptx
+resources/*.bak_fillshots.pptx
+resources/*.copytest.pptx
+resources/*.tmp_patch.pptx
+resources/*-自动化流程日志版.pptx
 
 # Legacy reference frontend compiled outputs
 动环告警诊断模型实验台/src/**/*.js.map

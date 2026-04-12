@@ -4,8 +4,11 @@ param(
     [string]$RepoUrl = "https://github.com/hiyouga/LLaMA-Factory.git",
     [string]$TorchIndexUrl = "https://download.pytorch.org/whl/cu126",
     [switch]$InstallBitsAndBytes = $false,
-    [string]$BitsAndBytesWheelUrl = "https://github.com/jllllll/bitsandbytes-windows-webui/releases/download/wheels/bitsandbytes-0.41.2.post2-py3-none-win_amd64.whl"
+    [string]$BitsAndBytesWheelUrl = "https://github.com/jllllll/bitsandbytes-windows-webui/releases/download/wheels/bitsandbytes-0.41.2.post2-py3-none-win_amd64.whl",
+    [string]$EnvRoot = "E:\.env_trains"
 )
+
+. (Join-Path $PSScriptRoot "00-apply-cache-env.ps1") -EnvRoot $EnvRoot
 
 $VenvPython = Join-Path $VenvPath "Scripts\python.exe"
 $GitExe = (Get-Command git -ErrorAction SilentlyContinue).Source

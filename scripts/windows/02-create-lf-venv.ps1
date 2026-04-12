@@ -1,7 +1,10 @@
 param(
     [string]$PythonExe = "E:\.env_trains\python311\python.exe",
-    [string]$VenvPath = "E:\.env_trains\venvs\lf-py311"
+    [string]$VenvPath = "E:\.env_trains\venvs\lf-py311",
+    [string]$EnvRoot = "E:\.env_trains"
 )
+
+. (Join-Path $PSScriptRoot "00-apply-cache-env.ps1") -EnvRoot $EnvRoot
 
 if (-not (Test-Path $PythonExe)) {
     throw "Python executable not found: $PythonExe"

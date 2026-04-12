@@ -1,6 +1,9 @@
 param(
-    [string]$ProjectRoot = "E:\ai\ai_trains"
+    [string]$ProjectRoot = "E:\ai\ai_trains",
+    [string]$EnvRoot = "E:\.env_trains"
 )
+
+. (Join-Path $PSScriptRoot "00-apply-cache-env.ps1") -EnvRoot $EnvRoot
 
 $resourceFile = Join-Path $ProjectRoot "resources\alarm_analysis.json"
 $prepareScript = Join-Path $ProjectRoot "scripts\prepare_alarm_analysis_datasets.py"

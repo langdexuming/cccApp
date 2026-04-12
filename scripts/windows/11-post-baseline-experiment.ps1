@@ -1,8 +1,11 @@
 param(
     [string]$ApiBase = "http://127.0.0.1:18080/api",
     [string]$ProjectRoot = "E:\ai\ai_trains",
-    [string]$OllamaModel
+    [string]$OllamaModel,
+    [string]$EnvRoot = "E:\.env_trains"
 )
+
+. (Join-Path $PSScriptRoot "00-apply-cache-env.ps1") -EnvRoot $EnvRoot
 
 if (-not $OllamaModel) {
     throw "Please provide -OllamaModel with an existing local Ollama model name."

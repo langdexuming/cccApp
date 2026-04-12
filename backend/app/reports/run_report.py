@@ -19,6 +19,7 @@ def build_run_report(
     ollama: dict[str, Any] | None = None,
     evaluation: dict[str, Any] | None = None,
     benchmark: dict[str, Any] | None = None,
+    automation_pipeline: dict[str, Any] | None = None,
 ) -> None:
     payload = {
         "generated_at": utcnow().isoformat(),
@@ -43,6 +44,7 @@ def build_run_report(
         "ollama": ollama or {},
         "evaluation": evaluation or {},
         "benchmark": benchmark or {},
+        "automation_pipeline": automation_pipeline or {},
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

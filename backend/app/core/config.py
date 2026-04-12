@@ -93,10 +93,14 @@ class Settings(BaseModel):
             self.pip_cache_root,
             self.huggingface_cache_root,
             self.huggingface_cache_root / "hub",
+            self.huggingface_cache_root / "datasets",
+            self.huggingface_cache_root / "assets",
             self.huggingface_cache_root / "transformers",
             self.torch_cache_root,
             self.npm_cache_root,
             self.modelscope_cache_root,
+            self.modelscope_cache_root / "models",
+            self.modelscope_cache_root / "datasets",
             self.tmp_root,
             self.ollama_models_root,
         ):
@@ -104,6 +108,8 @@ class Settings(BaseModel):
 
     def build_cache_env(self) -> dict[str, str]:
         hf_hub_cache_root = self.huggingface_cache_root / "hub"
+        hf_datasets_cache_root = self.huggingface_cache_root / "datasets"
+        hf_assets_cache_root = self.huggingface_cache_root / "assets"
         transformers_cache_root = self.huggingface_cache_root / "transformers"
         xdg_cache_root = self.env_root / "cache"
         return {
@@ -111,6 +117,8 @@ class Settings(BaseModel):
             "HF_HOME": str(self.huggingface_cache_root),
             "HF_HUB_CACHE": str(hf_hub_cache_root),
             "HUGGINGFACE_HUB_CACHE": str(hf_hub_cache_root),
+            "HF_DATASETS_CACHE": str(hf_datasets_cache_root),
+            "HUGGINGFACE_ASSETS_CACHE": str(hf_assets_cache_root),
             "TRANSFORMERS_CACHE": str(transformers_cache_root),
             "TORCH_HOME": str(self.torch_cache_root),
             "MODELSCOPE_CACHE": str(self.modelscope_cache_root),
@@ -118,6 +126,7 @@ class Settings(BaseModel):
             "TEMP": str(self.tmp_root),
             "XDG_CACHE_HOME": str(xdg_cache_root),
             "OLLAMA_MODELS": str(self.ollama_models_root),
+            "USE_MODELSCOPE_HUB": "1",
         }
 
 

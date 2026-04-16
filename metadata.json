@@ -1,0 +1,6 @@
+{
+  "name": "Claude Desktop Clone",
+  "description": "A beautiful and concise Claude-like AI assistant interface powered by Gemini.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": []
+}

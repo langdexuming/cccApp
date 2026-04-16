@@ -4,6 +4,10 @@ import { ChatInterface } from './components/ChatInterface';
 import { Chat, AppSettings } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { SettingsModal } from './components/SettingsModal';
+import {
+  fetchLocalToolConfig,
+  mergeLocalToolConfigIntoSettings,
+} from './lib/mergeLocalToolConfig';
 
 const DEFAULT_SETTINGS: AppSettings = {
   activeProvider: 'gemini',
@@ -73,6 +77,20 @@ export default function App() {
         console.error('Failed to parse saved settings', e);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const data = await fetchLocalToolConfig();
+      if (!data || !data.ok || cancelled) {
+        return;
+      }
+      setSettings((prev) => mergeLocalToolConfigIntoSettings(prev, data));
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Save chats to localStorage whenever they change

@@ -1,8 +1,12 @@
-import { useState } from 'react';
-import { X, Save, Globe, Key, Shield, Info, CheckCircle2, Plus, Trash2, Cpu } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Save, Globe, Key, Shield, Info, CheckCircle2, Plus, Trash2, Cpu, FolderInput } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppSettings, ProviderType, ProviderConfig } from '../types';
 import { cn } from '../lib/utils';
+import {
+  fetchLocalToolConfig,
+  mergeLocalToolConfigIntoSettings,
+} from '../lib/mergeLocalToolConfig';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -17,6 +21,40 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
   const [showSaved, setShowSaved] = useState(false);
   const [newModelName, setNewModelName] = useState('');
   const [modelFilter, setModelFilter] = useState('');
+  const [localImportHint, setLocalImportHint] = useState<string | null>(null);
+  const [localImportBusy, setLocalImportBusy] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLocalSettings(settings);
+      setLocalImportHint(null);
+    }
+  }, [isOpen, settings]);
+
+  const handleImportLocalToolDirs = async () => {
+    setLocalImportBusy(true);
+    setLocalImportHint(null);
+    const data = await fetchLocalToolConfig();
+    setLocalImportBusy(false);
+    if (!data?.ok) {
+      setLocalImportHint(
+        data?.error
+          ? `读取失败：${data.error}`
+          : '无法读取本机目录。请使用 npm run dev 或 npm run preview 启动；纯静态托管环境不支持。',
+      );
+      return;
+    }
+    if (data.sources.length === 0) {
+      setLocalImportHint(
+        '未发现可用项。将检查 ~/.gemini/.env、~/.claude/settings*.json、~/.codex/config.toml 与 auth.json 等。',
+      );
+    } else {
+      setLocalImportHint(
+        `已从 ${data.sources.length} 个文件合并（仅写入仍为空的 API Key，Base URL 仅在内置默认时可被覆盖）。`,
+      );
+    }
+    setLocalSettings((prev) => mergeLocalToolConfigIntoSettings(prev, data));
+  };
 
   const handleSave = () => {
     onSave(localSettings);
@@ -226,6 +264,28 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
                         您的 API Key 将仅保存在本地浏览器缓存中。请确保在受信任的设备上使用。
                       </p>
                     </div>
+                  </div>
+
+                  <div className="p-4 bg-zinc-50 rounded-2xl border border-border-theme space-y-3">
+                    <div className="flex items-center gap-2">
+                      <FolderInput className="w-4 h-4 text-text-secondary" />
+                      <p className="text-xs font-bold text-text-primary">本机工具目录</p>
+                    </div>
+                    <p className="text-[10px] text-text-secondary leading-relaxed">
+                      从用户目录下的 .gemini、.claude、.codex（以及环境变量 CODEX_HOME）读取与 CLI
+                      一致的配置。启动应用时需使用 Vite 开发或 preview 服务，以便在本地 Node 中访问这些路径。
+                    </p>
+                    <button
+                      type="button"
+                      disabled={localImportBusy}
+                      onClick={handleImportLocalToolDirs}
+                      className="w-full px-4 py-2.5 rounded-xl text-xs font-bold border border-border-theme bg-white hover:bg-zinc-50 transition-colors disabled:opacity-50"
+                    >
+                      {localImportBusy ? '正在读取…' : '从 .gemini / .claude / .codex 导入'}
+                    </button>
+                    {localImportHint ? (
+                      <p className="text-[10px] text-text-secondary leading-relaxed">{localImportHint}</p>
+                    ) : null}
                   </div>
                 </div>
               </div>

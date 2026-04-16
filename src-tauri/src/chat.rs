@@ -55,6 +55,21 @@ fn claude_messages_url(provider: &ProviderConfig) -> String {
   }
 }
 
+fn gemini_generate_content_url(provider: &ProviderConfig, model: &str, api_key: &str) -> String {
+  let raw = provider
+    .base_url
+    .as_deref()
+    .map(str::trim)
+    .filter(|value| !value.is_empty())
+    .unwrap_or("https://generativelanguage.googleapis.com");
+  let trimmed = raw.trim_end_matches('/');
+  if trimmed.ends_with("/v1beta") {
+    format!("{trimmed}/models/{model}:generateContent?key={api_key}")
+  } else {
+    format!("{trimmed}/v1beta/models/{model}:generateContent?key={api_key}")
+  }
+}
+
 fn model_or_default(provider: &ProviderConfig, fallback: &str) -> String {
   provider
     .models
@@ -130,13 +145,12 @@ async fn api_error(response: Response) -> String {
 
 async fn request_gemini(
   client: &Client,
+  provider: &ProviderConfig,
   api_key: &str,
   model: &str,
   contents: Value,
 ) -> Result<String, String> {
-  let url = format!(
-    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-  );
+  let url = gemini_generate_content_url(provider, model, api_key);
   let response = client
     .post(url)
     .json(&json!({
@@ -310,6 +324,7 @@ pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, S
   match provider_id.as_str() {
     "gemini" => request_gemini(
       &client,
+      &provider,
       &api_key,
       &payload.active_model,
       gemini_messages(&payload.messages),
@@ -373,6 +388,7 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
       let model = model_or_default(&provider, "gemini-1.5-flash");
       request_gemini(
         &client,
+        &provider,
         &api_key,
         &model,
         Value::Array(vec![json!({

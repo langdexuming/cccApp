@@ -11,6 +11,7 @@ export type LocalToolConfigSource = {
 export type LocalToolProviderPatch = {
   apiKey?: string;
   baseUrl?: string;
+  models?: string[];
 };
 
 export type LocalToolConfigResponse = {

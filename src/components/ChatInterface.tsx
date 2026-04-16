@@ -7,6 +7,16 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
 
+function pickValidModel(
+  preferredModel: string | undefined,
+  availableModels: string[],
+): string {
+  if (preferredModel && availableModels.includes(preferredModel)) {
+    return preferredModel;
+  }
+  return availableModels[0] ?? '';
+}
+
 interface ChatInterfaceProps {
   chat: Chat | null;
   onUpdateChat: (chat: Chat) => void;
@@ -37,7 +47,9 @@ export function ChatInterface({
   const [showCommands, setShowCommands] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
   const [showModelSearch, setShowModelSearch] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(chat?.model || settings.providers[settings.activeProvider].models[0]);
+  const [selectedModel, setSelectedModel] = useState(
+    pickValidModel(chat?.model, settings.providers[settings.activeProvider].models),
+  );
   const [selectedEffort, setSelectedEffort] = useState<Chat['effort']>(chat?.effort || 'medium');
 
   const activeProvider = settings.providers[settings.activeProvider];
@@ -75,11 +87,13 @@ export function ChatInterface({
   ];
 
   useEffect(() => {
+    const preferredModel =
+      chat && chat.provider === settings.activeProvider ? chat.model : undefined;
+    setSelectedModel(pickValidModel(preferredModel, activeProvider.models));
     if (chat) {
-      setSelectedModel(chat.model || settings.providers[settings.activeProvider].models[0]);
       setSelectedEffort(chat.effort || 'medium');
     }
-  }, [chat?.id, settings.activeProvider]);
+  }, [activeProvider.models, chat?.effort, chat?.id, chat?.model, chat?.provider, settings.activeProvider]);
 
   useEffect(() => {
     onIsTypingChange?.(isLoading);
@@ -332,9 +346,10 @@ export function ChatInterface({
                         ? "bg-white text-text-primary shadow-sm" 
                         : "text-text-secondary hover:text-text-primary"
                     )}
+                    title={m.name}
                   >
                     <m.icon className={cn("w-3 h-3", selectedModel === m.id ? "text-accent-theme" : "")} />
-                    <span>{m.name.split('-').slice(-1)[0].toUpperCase()}</span>
+                    <span className="max-w-[140px] truncate">{m.name}</span>
                   </button>
                 ))
               ) : (

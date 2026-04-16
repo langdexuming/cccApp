@@ -6,6 +6,7 @@ import {readLocalToolConfig} from './desktop';
  * 与 App.tsx 中 DEFAULT_SETTINGS 保持一致，用于判断 baseUrl 是否仍为内置默认
  */
 const BUILTIN_DEFAULT_BASE_URL: Partial<Record<ProviderType, string>> = {
+  gemini: 'https://generativelanguage.googleapis.com',
   claude: 'https://api.anthropic.com/v1/messages',
   openai: 'https://api.openai.com/v1',
 };
@@ -68,7 +69,10 @@ export function mergeLocalToolConfigIntoSettings(
       !curBu || (builtIn !== undefined && curBu === builtIn);
     const baseUrl =
       patch.baseUrl && baseUrlStillDefault ? patch.baseUrl : cur.baseUrl;
-    next.providers[id] = {...cur, apiKey, baseUrl};
+    const mergedModels = patch.models?.length
+      ? Array.from(new Set([...patch.models, ...cur.models]))
+      : cur.models;
+    next.providers[id] = {...cur, apiKey, baseUrl, models: mergedModels};
   }
   return next;
 }

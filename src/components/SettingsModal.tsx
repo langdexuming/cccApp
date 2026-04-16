@@ -8,6 +8,50 @@ import {
   mergeLocalToolConfigIntoSettings,
 } from '../lib/mergeLocalToolConfig';
 
+const PROVIDER_MODEL_OPTIONS: Record<ProviderType, string[]> = {
+  gemini: [
+    'gemini-3-flash-preview',
+    'gemini-3-pro-preview',
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash',
+  ],
+  claude: [
+    'claude-3-7-sonnet-latest',
+    'claude-3-5-sonnet-latest',
+    'claude-3-5-haiku-latest',
+    'claude-3-opus-20240229',
+    'claude-3-sonnet-20240229',
+    'claude-3-haiku-20240307',
+  ],
+  openai: [
+    'gpt-5.4',
+    'gpt-5',
+    'gpt-5-mini',
+    'gpt-4.1',
+    'gpt-4.1-mini',
+    'gpt-4o',
+    'gpt-4o-mini',
+    'gpt-4-turbo-preview',
+    'gpt-4',
+    'gpt-3.5-turbo',
+  ],
+  custom: [
+    'gpt-4o',
+    'gpt-4o-mini',
+    'gpt-4.1',
+    'gpt-4.1-mini',
+    'deepseek-chat',
+    'deepseek-reasoner',
+    'qwen-max',
+    'qwen-plus',
+    'glm-4.5',
+    'claude-3-7-sonnet-latest',
+  ],
+};
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -20,6 +64,7 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
   const [activeTab, setActiveTab] = useState<ProviderType>('gemini');
   const [showSaved, setShowSaved] = useState(false);
   const [newModelName, setNewModelName] = useState('');
+  const [selectedPresetModel, setSelectedPresetModel] = useState('');
   const [modelFilter, setModelFilter] = useState('');
   const [localImportHint, setLocalImportHint] = useState<string | null>(null);
   const [localImportBusy, setLocalImportBusy] = useState(false);
@@ -27,9 +72,16 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
   useEffect(() => {
     if (isOpen) {
       setLocalSettings(settings);
+      setSelectedPresetModel('');
       setLocalImportHint(null);
     }
   }, [isOpen, settings]);
+
+  useEffect(() => {
+    setNewModelName('');
+    setSelectedPresetModel('');
+    setModelFilter('');
+  }, [activeTab]);
 
   const handleImportLocalToolDirs = async () => {
     setLocalImportBusy(true);
@@ -72,15 +124,19 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
     }));
   };
 
-  const addModel = () => {
-    if (!newModelName.trim()) return;
+  const addModel = (modelName?: string) => {
+    const value = (modelName ?? newModelName).trim();
+    if (!value) return;
     const currentModels = localSettings.providers[activeTab].models;
-    if (currentModels.includes(newModelName.trim())) return;
+    if (currentModels.includes(value)) return;
     
     updateProvider(activeTab, {
-      models: [...currentModels, newModelName.trim()]
+      models: [...currentModels, value]
     });
     setNewModelName('');
+    if (selectedPresetModel === value) {
+      setSelectedPresetModel('');
+    }
   };
 
   const removeModel = (modelName: string) => {
@@ -89,6 +145,11 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
       models: currentModels.filter(m => m !== modelName)
     });
   };
+
+  const availablePresetModels = PROVIDER_MODEL_OPTIONS[activeTab].filter(
+    (model) => !localSettings.providers[activeTab].models.includes(model),
+  );
+  const quickAddModels = availablePresetModels.slice(0, 8);
 
   if (!isOpen) return null;
 
@@ -190,7 +251,7 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
                     />
                   </div>
 
-                  {(activeTab === 'claude' || activeTab === 'openai' || activeTab === 'custom') && (
+                  {(activeTab === 'gemini' || activeTab === 'claude' || activeTab === 'openai' || activeTab === 'custom') && (
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold text-text-secondary flex items-center gap-2">
                         <Globe className="w-3 h-3" />
@@ -200,7 +261,13 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
                         type="text"
                         value={localSettings.providers[activeTab].baseUrl || ''}
                         onChange={(e) => updateProvider(activeTab, { baseUrl: e.target.value })}
-                        placeholder={activeTab === 'claude' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'}
+                        placeholder={
+                          activeTab === 'gemini'
+                            ? 'https://generativelanguage.googleapis.com'
+                            : activeTab === 'claude'
+                              ? 'https://api.anthropic.com/v1'
+                              : 'https://api.openai.com/v1'
+                        }
                         className="w-full px-4 py-2.5 bg-zinc-50 border border-border-theme rounded-xl text-sm focus:ring-4 focus:ring-accent-theme/5 focus:border-accent-theme transition-all outline-none"
                       />
                     </div>
@@ -221,12 +288,51 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
                         className="flex-1 px-4 py-2 bg-zinc-50 border border-border-theme rounded-xl text-sm focus:ring-4 focus:ring-accent-theme/5 focus:border-accent-theme transition-all outline-none"
                       />
                       <button
-                        onClick={addModel}
+                        onClick={() => addModel()}
                         className="px-4 py-2 bg-zinc-100 text-text-primary rounded-xl text-sm font-bold hover:bg-zinc-200 transition-all active:scale-95"
                       >
                         <Plus className="w-4 h-4" />
                       </button>
                     </div>
+                    <div className="flex gap-2">
+                      <select
+                        value={selectedPresetModel}
+                        onChange={(e) => setSelectedPresetModel(e.target.value)}
+                        className="flex-1 px-4 py-2 bg-zinc-50 border border-border-theme rounded-xl text-sm focus:ring-4 focus:ring-accent-theme/5 focus:border-accent-theme transition-all outline-none"
+                      >
+                        <option value="">从常用模型中选择...</option>
+                        {availablePresetModels.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => addModel(selectedPresetModel)}
+                        disabled={!selectedPresetModel}
+                        className="px-4 py-2 bg-white border border-border-theme text-text-primary rounded-xl text-sm font-bold hover:bg-zinc-50 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        添加选中
+                      </button>
+                    </div>
+                    {quickAddModels.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-medium text-text-secondary">常用模型快速添加</p>
+                        <div className="flex flex-wrap gap-2">
+                          {quickAddModels.map((model) => (
+                            <button
+                              key={model}
+                              type="button"
+                              onClick={() => addModel(model)}
+                              className="px-3 py-1.5 bg-white border border-border-theme rounded-lg text-xs font-medium text-text-primary hover:border-accent-theme hover:text-accent-theme transition-colors"
+                            >
+                              {model}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
                       <div className="w-full mb-1">
                         <input

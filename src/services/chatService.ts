@@ -30,7 +30,7 @@ export async function* streamChat(
 
   switch (settings.activeProvider) {
     case 'gemini':
-      yield* streamGemini(messages, provider.apiKey, activeModel);
+      yield* streamGemini(messages, provider.apiKey, activeModel, provider.baseUrl);
       break;
     case 'claude':
       yield* streamClaude(messages, provider.apiKey, activeModel, provider.baseUrl);
@@ -55,8 +55,16 @@ async function* yieldTextInChunks(text: string) {
   }
 }
 
-async function* streamGemini(messages: Message[], apiKey: string, model: string) {
-  const ai = new GoogleGenAI({ apiKey });
+function createGeminiClient(apiKey: string, baseUrl?: string) {
+  const trimmedBaseUrl = baseUrl?.trim();
+  return new GoogleGenAI({
+    apiKey,
+    ...(trimmedBaseUrl ? {baseURL: trimmedBaseUrl} : {}),
+  });
+}
+
+async function* streamGemini(messages: Message[], apiKey: string, model: string, baseUrl?: string) {
+  const ai = createGeminiClient(apiKey, baseUrl);
   const history = messages.slice(0, -1).map(m => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.content }]
@@ -190,7 +198,7 @@ export async function generateTitle(firstMessage: string, settings: AppSettings)
 
   try {
     if (settings.activeProvider === 'gemini') {
-      const ai = new GoogleGenAI({ apiKey: provider.apiKey });
+      const ai = createGeminiClient(provider.apiKey, provider.baseUrl);
       const response = await ai.models.generateContent({
         model: provider.models[0],
         contents: `Generate a very short, concise title (max 5 words) for a chat that starts with: "${firstMessage}". Return only the title text.`,

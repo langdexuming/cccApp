@@ -85,6 +85,8 @@ pub struct LocalToolConfigSource {
 pub struct LocalToolProviderPatch {
   pub api_key: Option<String>,
   pub base_url: Option<String>,
+  #[serde(default)]
+  pub models: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

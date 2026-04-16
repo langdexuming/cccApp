@@ -1,11 +1,27 @@
 import { GoogleGenAI } from "@google/genai";
 import { Message, AppSettings, ProviderType } from "../types";
+import {
+  requestDesktopChatCompletion,
+  requestDesktopTitle,
+} from "../lib/desktop";
 
 export async function* streamChat(
   messages: Message[], 
   settings: AppSettings,
-  activeModel: string
+  activeModel: string,
+  effort?: 'low' | 'medium' | 'high',
 ) {
+  const desktopResponse = await requestDesktopChatCompletion({
+    messages,
+    settings,
+    activeModel,
+    effort,
+  });
+  if (desktopResponse !== null) {
+    yield* yieldTextInChunks(desktopResponse);
+    return;
+  }
+
   const provider = settings.providers[settings.activeProvider];
   
   if (!provider.apiKey) {
@@ -25,6 +41,17 @@ export async function* streamChat(
       break;
     default:
       throw new Error('未知的模型提供商');
+  }
+}
+
+async function* yieldTextInChunks(text: string) {
+  if (!text) {
+    return;
+  }
+  const chunkSize = text.length > 600 ? 48 : 24;
+  for (let i = 0; i < text.length; i += chunkSize) {
+    yield text.slice(i, i + chunkSize);
+    await new Promise((resolve) => window.setTimeout(resolve, 8));
   }
 }
 
@@ -153,6 +180,11 @@ async function* streamOpenAI(messages: Message[], apiKey: string, model: string,
 }
 
 export async function generateTitle(firstMessage: string, settings: AppSettings): Promise<string> {
+  const desktopTitle = await requestDesktopTitle({firstMessage, settings});
+  if (desktopTitle !== null) {
+    return desktopTitle || "New Chat";
+  }
+
   const provider = settings.providers[settings.activeProvider];
   if (!provider.apiKey) return "New Chat";
 

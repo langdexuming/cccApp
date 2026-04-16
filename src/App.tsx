@@ -8,6 +8,7 @@ import {
   fetchLocalToolConfig,
   mergeLocalToolConfigIntoSettings,
 } from './lib/mergeLocalToolConfig';
+import {loadPersistedState, savePersistedState} from './lib/desktop';
 
 const DEFAULT_SETTINGS: AppSettings = {
   activeProvider: 'gemini',
@@ -53,30 +54,59 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [hasLoadedPersistedState, setHasLoadedPersistedState] = useState(false);
 
-  // Load chats and settings from localStorage on mount
   useEffect(() => {
-    const savedChats = localStorage.getItem('claude_chats');
-    if (savedChats) {
-      try {
-        const parsed = JSON.parse(savedChats);
-        setChats(parsed);
-        if (parsed.length > 0) {
-          setActiveChatId(parsed[0].id);
-        }
-      } catch (e) {
-        console.error('Failed to parse saved chats', e);
-      }
-    }
+    let cancelled = false;
 
-    const savedSettings = localStorage.getItem('claude_settings');
-    if (savedSettings) {
+    (async () => {
       try {
-        setSettings(JSON.parse(savedSettings));
-      } catch (e) {
-        console.error('Failed to parse saved settings', e);
+        const persisted = await loadPersistedState();
+        if (cancelled) {
+          return;
+        }
+        if (persisted) {
+          setChats(persisted.chats || []);
+          setSettings(persisted.settings || DEFAULT_SETTINGS);
+          const nextActiveChatId =
+            persisted.activeChatId && persisted.chats.some((item) => item.id === persisted.activeChatId)
+              ? persisted.activeChatId
+              : (persisted.chats[0]?.id ?? null);
+          setActiveChatId(nextActiveChatId);
+          return;
+        }
+
+        const savedChats = localStorage.getItem('claude_chats');
+        if (savedChats) {
+          try {
+            const parsed = JSON.parse(savedChats) as Chat[];
+            setChats(parsed);
+            if (parsed.length > 0) {
+              setActiveChatId(parsed[0].id);
+            }
+          } catch (e) {
+            console.error('Failed to parse saved chats', e);
+          }
+        }
+
+        const savedSettings = localStorage.getItem('claude_settings');
+        if (savedSettings) {
+          try {
+            setSettings(JSON.parse(savedSettings));
+          } catch (e) {
+            console.error('Failed to parse saved settings', e);
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setHasLoadedPersistedState(true);
+        }
       }
-    }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -93,15 +123,24 @@ export default function App() {
     };
   }, []);
 
-  // Save chats to localStorage whenever they change
   useEffect(() => {
+    if (!hasLoadedPersistedState) {
+      return;
+    }
     localStorage.setItem('claude_chats', JSON.stringify(chats));
-  }, [chats]);
+    void savePersistedState({
+      chats,
+      settings,
+      activeChatId,
+    });
+  }, [activeChatId, chats, hasLoadedPersistedState, settings]);
 
-  // Save settings to localStorage whenever they change
   useEffect(() => {
+    if (!hasLoadedPersistedState) {
+      return;
+    }
     localStorage.setItem('claude_settings', JSON.stringify(settings));
-  }, [settings]);
+  }, [hasLoadedPersistedState, settings]);
 
   const handleUpdateChat = (updatedChat: Chat) => {
     setChats(prev => {

@@ -209,7 +209,7 @@ export function ChatInterface({
       const assistantMessageId = (Date.now() + 1).toString();
       let assistantContent = '';
       
-      const stream = streamChat(currentChat.messages, settings, selectedModel);
+      const stream = streamChat(currentChat.messages, settings, selectedModel, selectedEffort);
       
       for await (const chunk of stream) {
         assistantContent += chunk;

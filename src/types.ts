@@ -23,6 +23,12 @@ export interface AppSettings {
   activeProvider: ProviderType;
 }
 
+export interface PersistedAppState {
+  chats: Chat[];
+  settings: AppSettings;
+  activeChatId: string | null;
+}
+
 export interface Chat {
   id: string;
   title: string;

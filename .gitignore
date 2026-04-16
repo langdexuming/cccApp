@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+
+.cargo-target/
+.local-msvc/
+artifacts/
+
+rustup-init.exe
+vs_BuildTools.exe
+winsdksetup.exe

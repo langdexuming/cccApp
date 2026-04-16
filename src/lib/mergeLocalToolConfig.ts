@@ -1,5 +1,6 @@
 import type {AppSettings, ProviderType} from '../types';
 import type {LocalToolConfigResponse} from '../../localToolConfig.types';
+import {readLocalToolConfig} from './desktop';
 
 /**
  * 与 App.tsx 中 DEFAULT_SETTINGS 保持一致，用于判断 baseUrl 是否仍为内置默认
@@ -14,6 +15,14 @@ const BUILTIN_DEFAULT_BASE_URL: Partial<Record<ProviderType, string>> = {
  * @returns 解析结果；静态部署或接口不可用时为 null
  */
 export async function fetchLocalToolConfig(): Promise<LocalToolConfigResponse | null> {
+  try {
+    const desktopData = await readLocalToolConfig();
+    if (desktopData) {
+      return desktopData;
+    }
+  } catch {
+    // Fall back to the Vite dev/preview endpoint when desktop IPC is unavailable.
+  }
   try {
     const res = await fetch('/__ccc/local-provider-config');
     const raw = await res.text();

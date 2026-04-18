@@ -58,15 +58,23 @@ fn extract_toml_value(content: &str, key: &str) -> Option<String> {
   None
 }
 
-fn normalize_claude_messages_url(raw: &str) -> String {
+fn normalize_claude_base_url(raw: &str) -> String {
   let trimmed = raw.trim().trim_end_matches('/');
-  if trimmed.ends_with("/messages") {
-    trimmed.to_string()
-  } else if trimmed.ends_with("/v1") {
-    format!("{trimmed}/messages")
+  if let Some(value) = trimmed.strip_suffix("/messages") {
+    value.to_string()
+  } else if let Some(value) = trimmed.strip_suffix("/chat/completions") {
+    value.to_string()
   } else {
-    format!("{trimmed}/v1/messages")
+    trimmed.to_string()
   }
+}
+
+fn normalize_claude_model(raw: &str) -> Option<String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() || !trimmed.to_ascii_lowercase().starts_with("claude-") {
+    return None;
+  }
+  Some(trimmed.to_string())
 }
 
 fn take_non_empty_string(value: Option<&Value>) -> Option<String> {
@@ -111,9 +119,15 @@ fn pick_gemini_env_from_dotenv(
   (api_key, base_url, keys)
 }
 
-fn pick_claude_env_from_settings(root: &Value) -> (Option<String>, Option<String>, Vec<&'static str>) {
+fn pick_claude_env_from_settings(
+  root: &Value,
+) -> (Option<String>, Option<String>, Option<String>, Vec<&'static str>) {
   let mut api_key = None;
   let mut base_url = None;
+  let model = root
+    .get("model")
+    .and_then(Value::as_str)
+    .and_then(normalize_claude_model);
   let mut keys = Vec::new();
 
   for block_name in ["env", "environmentVariables"] {
@@ -133,13 +147,17 @@ fn pick_claude_env_from_settings(root: &Value) -> (Option<String>, Option<String
 
     if base_url.is_none() {
       if let Some(value) = take_non_empty_string(block.get("ANTHROPIC_BASE_URL")) {
-        base_url = Some(normalize_claude_messages_url(&value));
+        base_url = Some(normalize_claude_base_url(&value));
         keys.push("ANTHROPIC_BASE_URL");
       }
     }
   }
 
-  (api_key, base_url, keys)
+  if model.is_some() {
+    keys.push("model");
+  }
+
+  (api_key, base_url, model, keys)
 }
 
 fn parse_toml_section_name(line: &str) -> Option<String> {
@@ -157,9 +175,11 @@ fn quoted_toml_table_key(value: &str) -> String {
   format!("\"{escaped}\"")
 }
 
-fn pick_codex_base_url(content: &str) -> Option<(String, Vec<String>)> {
-  if let Some(base) = extract_toml_value(content, "openai_base_url") {
-    return Some((base, vec!["openai_base_url".to_string()]));
+fn pick_codex_provider_value(content: &str, key: &str) -> Option<(String, Vec<String>)> {
+  if key == "base_url" {
+    if let Some(base) = extract_toml_value(content, "openai_base_url") {
+      return Some((base, vec!["openai_base_url".to_string()]));
+    }
   }
 
   let selected_provider = extract_toml_value(content, "model_provider")?;
@@ -185,23 +205,31 @@ fn pick_codex_base_url(content: &str) -> Option<(String, Vec<String>)> {
     let Some((left, right)) = no_comment.split_once('=') else {
       continue;
     };
-    if left.trim() != "base_url" {
+    if left.trim() != key {
       continue;
     }
-    let base_url = right.trim().trim_matches('"').trim_matches('\'').trim();
-    if base_url.is_empty() {
+    let value = right.trim().trim_matches('"').trim_matches('\'').trim();
+    if value.is_empty() {
       return None;
     }
     return Some((
-      base_url.to_string(),
+      value.to_string(),
       vec![
         "model_provider".to_string(),
-        format!("{current_section}.base_url"),
+        format!("{current_section}.{key}"),
       ],
     ));
   }
 
   None
+}
+
+fn pick_codex_base_url(content: &str) -> Option<(String, Vec<String>)> {
+  pick_codex_provider_value(content, "base_url")
+}
+
+fn pick_codex_wire_api(content: &str) -> Option<(String, Vec<String>)> {
+  pick_codex_provider_value(content, "wire_api")
 }
 
 fn pick_codex_model(content: &str) -> Option<String> {
@@ -264,6 +292,7 @@ fn merge_provider_patch(
   provider_id: &str,
   api_key: Option<String>,
   base_url: Option<String>,
+  wire_api: Option<String>,
   models: Option<Vec<String>>,
 ) {
   let entry = providers.entry(provider_id.to_string()).or_default();
@@ -272,6 +301,9 @@ fn merge_provider_patch(
   }
   if base_url.is_some() {
     entry.base_url = base_url;
+  }
+  if wire_api.is_some() {
+    entry.wire_api = wire_api;
   }
   if models.is_some() {
     entry.models = models;
@@ -301,7 +333,7 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
     let (api_key, base_url, keys) = pick_gemini_env_from_dotenv(&env_values);
 
     if api_key.is_some() || base_url.is_some() {
-      merge_provider_patch(&mut response.providers, "gemini", api_key, base_url, None);
+      merge_provider_patch(&mut response.providers, "gemini", api_key, base_url, None, None);
       push_source(&mut response.sources, &gemini_env_path, keys);
     }
   }
@@ -315,9 +347,16 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
     let Some(json) = read_json_file(&file_path) else {
       continue;
     };
-    let (api_key, base_url, keys) = pick_claude_env_from_settings(&json);
-    if api_key.is_some() || base_url.is_some() {
-      merge_provider_patch(&mut response.providers, "claude", api_key, base_url, None);
+    let (api_key, base_url, model, keys) = pick_claude_env_from_settings(&json);
+    if api_key.is_some() || base_url.is_some() || model.is_some() {
+      merge_provider_patch(
+        &mut response.providers,
+        "claude",
+        api_key,
+        base_url,
+        None,
+        model.map(|item| vec![item]),
+      );
       push_source(&mut response.sources, &file_path, keys);
     }
   }
@@ -345,6 +384,18 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
       }
     }
     let Some((base, keys)) = pick_codex_base_url(&raw) else {
+      if let Some((wire_api, keys)) = pick_codex_wire_api(&raw) {
+        merge_provider_patch(
+          &mut response.providers,
+          "openai",
+          None,
+          None,
+          Some(wire_api),
+          None,
+        );
+        let key_refs = keys.iter().map(String::as_str).collect::<Vec<_>>();
+        push_source(&mut response.sources, &file_path, key_refs);
+      }
       continue;
     };
     let trimmed = base.trim().trim_end_matches('/');
@@ -353,8 +404,20 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
     } else {
       format!("{trimmed}/v1")
     };
-    merge_provider_patch(&mut response.providers, "openai", None, Some(normalized), None);
-    let key_refs = keys.iter().map(String::as_str).collect::<Vec<_>>();
+    let wire_api = pick_codex_wire_api(&raw).map(|item| item.0);
+    merge_provider_patch(
+      &mut response.providers,
+      "openai",
+      None,
+      Some(normalized),
+      wire_api,
+      None,
+    );
+    let mut merged_keys = keys;
+    if let Some((_, wire_keys)) = pick_codex_wire_api(&raw) {
+      merged_keys.extend(wire_keys);
+    }
+    let key_refs = merged_keys.iter().map(String::as_str).collect::<Vec<_>>();
     push_source(&mut response.sources, &file_path, key_refs);
   }
 
@@ -383,6 +446,7 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
       "openai",
       None,
       None,
+      None,
       Some(merged_codex_models),
     );
   }
@@ -391,7 +455,7 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
   if auth_path.exists() {
     if let Some(json) = read_json_file(&auth_path) {
       if let Some(api_key) = find_sk_like_key(&json, 0) {
-        merge_provider_patch(&mut response.providers, "openai", Some(api_key), None, None);
+        merge_provider_patch(&mut response.providers, "openai", Some(api_key), None, None, None);
         push_source(&mut response.sources, &auth_path, vec!["api_key_pattern"]);
       }
     }
@@ -409,6 +473,7 @@ mod tests {
     pick_codex_base_url,
     pick_codex_cached_models,
     pick_codex_model,
+    pick_codex_wire_api,
     pick_gemini_env_from_dotenv,
   };
   use serde_json::json;
@@ -443,12 +508,28 @@ mod tests {
       }
     });
 
-    let (api_key, base_url, keys) = pick_claude_env_from_settings(&data);
+    let (api_key, base_url, _, keys) = pick_claude_env_from_settings(&data);
 
     assert_eq!(api_key.as_deref(), Some("sk-test"));
-    assert_eq!(base_url.as_deref(), Some("https://example.com/v1/messages"));
+    assert_eq!(base_url.as_deref(), Some("https://example.com"));
+    assert_eq!(keys.contains(&"model"), false);
     assert!(keys.contains(&"ANTHROPIC_AUTH_TOKEN"));
     assert!(keys.contains(&"ANTHROPIC_BASE_URL"));
+  }
+
+  #[test]
+  fn reads_claude_model_from_settings_json() {
+    let data = json!({
+      "model": "huihui_ai/qwen3.5-abliterated:4b-Claude",
+      "env": {
+        "ANTHROPIC_AUTH_TOKEN": "sk-test"
+      }
+    });
+
+    let (_, _, model, keys) = pick_claude_env_from_settings(&data);
+
+    assert_eq!(model.as_deref(), None);
+    assert!(!keys.contains(&"model"));
   }
 
   #[test]
@@ -468,6 +549,27 @@ base_url = "https://right.codes/codex/v1"
       vec![
         "model_provider".to_string(),
         "model_providers.rightcode.base_url".to_string()
+      ]
+    );
+  }
+
+  #[test]
+  fn reads_codex_wire_api_from_model_provider_block() {
+    let raw = r#"
+model_provider = "rightcode"
+
+[model_providers.rightcode]
+wire_api = "responses"
+"#;
+
+    let (wire_api, keys) = pick_codex_wire_api(raw).expect("wire api should be parsed");
+
+    assert_eq!(wire_api, "responses");
+    assert_eq!(
+      keys,
+      vec![
+        "model_provider".to_string(),
+        "model_providers.rightcode.wire_api".to_string()
       ]
     );
   }

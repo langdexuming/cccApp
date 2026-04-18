@@ -12,6 +12,7 @@ export type LocalToolProviderPatch = {
   apiKey?: string;
   baseUrl?: string;
   models?: string[];
+  wireApi?: 'messages' | 'chat_completions' | 'responses';
 };
 
 export type LocalToolConfigResponse = {

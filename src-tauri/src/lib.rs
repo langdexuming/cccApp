@@ -1,5 +1,6 @@
 mod app_state;
 mod chat;
+mod git;
 mod local_config;
 mod models;
 
@@ -21,7 +22,9 @@ pub fn run() {
       app_state::save_app_state,
       local_config::read_local_tool_configs,
       chat::chat_completion,
-      chat::generate_chat_title
+      chat::generate_chat_title,
+      chat::fetch_provider_models,
+      git::git_sync
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

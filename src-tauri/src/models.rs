@@ -17,6 +17,55 @@ pub struct AppSettings {
   #[serde(default)]
   pub providers: HashMap<String, ProviderConfig>,
   pub active_provider: String,
+  #[serde(default)]
+  pub collaboration: CollaborationSettings,
+  #[serde(default)]
+  pub git: GitSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CollaborationSettings {
+  #[serde(default)]
+  pub enabled: bool,
+  #[serde(default)]
+  pub agents: Vec<AgentConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentConfig {
+  pub id: String,
+  pub name: String,
+  pub role: String,
+  pub provider: String,
+  pub model: String,
+  pub system_prompt: String,
+  #[serde(default = "default_true")]
+  pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitSettings {
+  #[serde(default)]
+  pub enabled: bool,
+  #[serde(default)]
+  pub repo_url: String,
+  #[serde(default = "default_main_branch")]
+  pub branch: String,
+  pub last_sync: Option<i64>,
+}
+
+impl Default for GitSettings {
+  fn default() -> Self {
+    Self {
+      enabled: false,
+      repo_url: String::new(),
+      branch: default_main_branch(),
+      last_sync: None,
+    }
+  }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -27,6 +76,7 @@ pub struct ProviderConfig {
   #[serde(default)]
   pub api_key: String,
   pub base_url: Option<String>,
+  pub wire_api: Option<String>,
   #[serde(default = "default_true")]
   pub enabled: bool,
   #[serde(default)]
@@ -74,6 +124,37 @@ pub struct TitlePayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct FetchProviderModelsPayload {
+  pub provider_id: String,
+  pub settings: AppSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchProviderModelsResponse {
+  #[serde(default)]
+  pub models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GitSyncPayload {
+  #[serde(default)]
+  pub git: GitSettings,
+  pub operation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GitSyncResponse {
+  #[serde(default)]
+  pub stdout: String,
+  #[serde(default)]
+  pub stderr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalToolConfigSource {
   pub path: String,
   #[serde(default)]
@@ -85,6 +166,7 @@ pub struct LocalToolConfigSource {
 pub struct LocalToolProviderPatch {
   pub api_key: Option<String>,
   pub base_url: Option<String>,
+  pub wire_api: Option<String>,
   #[serde(default)]
   pub models: Option<Vec<String>>,
 }
@@ -113,4 +195,8 @@ impl LocalToolConfigResponse {
 
 fn default_true() -> bool {
   true
+}
+
+fn default_main_branch() -> String {
+  "main".to_string()
 }

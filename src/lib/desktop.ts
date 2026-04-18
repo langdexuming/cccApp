@@ -24,6 +24,25 @@ type TitlePayload = {
   settings: AppSettings;
 };
 
+type FetchProviderModelsPayload = {
+  providerId: string;
+  settings: AppSettings;
+};
+
+type FetchProviderModelsResponse = {
+  models: string[];
+};
+
+type GitSyncPayload = {
+  git: AppSettings['git'];
+  operation: 'pull' | 'push';
+};
+
+type GitSyncResponse = {
+  stdout: string;
+  stderr: string;
+};
+
 export function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof window.__TAURI_INTERNALS__ !== 'undefined';
 }
@@ -60,7 +79,7 @@ export async function requestDesktopChatCompletion(
   if (!isTauriRuntime()) {
     return null;
   }
-  return invokeCommand<string>('chat_completion', payload);
+  return invokeCommand<string>('chat_completion', {payload});
 }
 
 export async function requestDesktopTitle(
@@ -69,5 +88,23 @@ export async function requestDesktopTitle(
   if (!isTauriRuntime()) {
     return null;
   }
-  return invokeCommand<string>('generate_chat_title', payload);
+  return invokeCommand<string>('generate_chat_title', {payload});
+}
+
+export async function fetchRemoteProviderModels(
+  payload: FetchProviderModelsPayload,
+): Promise<FetchProviderModelsResponse | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invokeCommand<FetchProviderModelsResponse>('fetch_provider_models', {payload});
+}
+
+export async function requestGitSync(
+  payload: GitSyncPayload,
+): Promise<GitSyncResponse | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invokeCommand<GitSyncResponse>('git_sync', {payload});
 }

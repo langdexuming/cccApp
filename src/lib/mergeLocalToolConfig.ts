@@ -1,13 +1,14 @@
 import type {AppSettings, ProviderType} from '../types';
 import type {LocalToolConfigResponse} from '../../localToolConfig.types';
 import {readLocalToolConfig} from './desktop';
+import {normalizeSettings} from './providerCatalog';
 
 /**
  * 与 App.tsx 中 DEFAULT_SETTINGS 保持一致，用于判断 baseUrl 是否仍为内置默认
  */
 const BUILTIN_DEFAULT_BASE_URL: Partial<Record<ProviderType, string>> = {
   gemini: 'https://generativelanguage.googleapis.com',
-  claude: 'https://api.anthropic.com/v1/messages',
+  claude: 'https://api.anthropic.com',
   openai: 'https://api.openai.com/v1',
 };
 
@@ -48,7 +49,7 @@ export function mergeLocalToolConfigIntoSettings(
   data: LocalToolConfigResponse,
 ): AppSettings {
   if (!data.ok) {
-    return prev;
+    return normalizeSettings(prev);
   }
   const next: AppSettings = {
     ...prev,
@@ -70,9 +71,17 @@ export function mergeLocalToolConfigIntoSettings(
     const baseUrl =
       patch.baseUrl && baseUrlStillDefault ? patch.baseUrl : cur.baseUrl;
     const mergedModels = patch.models?.length
-      ? Array.from(new Set([...patch.models, ...cur.models]))
+      ? id === 'claude'
+        ? [...patch.models]
+        : Array.from(new Set([...patch.models, ...cur.models]))
       : cur.models;
-    next.providers[id] = {...cur, apiKey, baseUrl, models: mergedModels};
+    next.providers[id] = {
+      ...cur,
+      apiKey,
+      baseUrl,
+      models: mergedModels,
+      wireApi: patch.wireApi ?? cur.wireApi,
+    };
   }
-  return next;
+  return normalizeSettings(next);
 }

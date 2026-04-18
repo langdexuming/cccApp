@@ -16,6 +16,7 @@ export interface ProviderConfig {
   baseUrl?: string;
   enabled: boolean;
   models: string[];
+  wireApi?: 'messages' | 'chat_completions' | 'responses';
 }
 
 export interface AgentConfig {

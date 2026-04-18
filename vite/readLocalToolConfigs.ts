@@ -67,20 +67,112 @@ function extractTomlValue(content: string, key: string): string | undefined {
   return undefined;
 }
 
-function normalizeClaudeMessagesUrl(raw: string): string {
-  const t = raw.trim().replace(/\/$/, '');
-  if (t.endsWith('/messages')) {
-    return t;
+function parseTomlSectionName(line: string): string | undefined {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) {
+    return undefined;
   }
-  if (t.endsWith('/v1')) {
-    return `${t}/messages`;
+  const section = trimmed.slice(1, -1).trim();
+  return section || undefined;
+}
+
+function quotedTomlTableKey(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function pickCodexProviderValue(content: string, key: 'base_url' | 'wire_api'): {value?: string; keys: string[]} {
+  if (key === 'base_url') {
+    const openaiBaseUrl = extractTomlValue(content, 'openai_base_url');
+    if (openaiBaseUrl) {
+      return {value: openaiBaseUrl, keys: ['openai_base_url']};
+    }
   }
-  return `${t}/v1/messages`;
+
+  const selectedProvider = extractTomlValue(content, 'model_provider');
+  if (!selectedProvider) {
+    return {keys: []};
+  }
+
+  const providerSection = `model_providers.${selectedProvider}`;
+  const quotedProviderSection = `model_providers.${quotedTomlTableKey(selectedProvider)}`;
+  let currentSection = '';
+
+  for (const line of content.split(/\r?\n/)) {
+    const noComment = line.replace(/#.*/, '').trim();
+    if (!noComment) {
+      continue;
+    }
+
+    const section = parseTomlSectionName(noComment);
+    if (section) {
+      currentSection = section;
+      continue;
+    }
+
+    if (currentSection !== providerSection && currentSection !== quotedProviderSection) {
+      continue;
+    }
+
+    const match = noComment.match(/^([^=]+)=(.+)$/);
+    if (!match || match[1].trim() !== key) {
+      continue;
+    }
+
+    let value = match[2].trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    return {
+      value: value || undefined,
+      keys: ['model_provider', `${currentSection}.${key}`],
+    };
+  }
+
+  return {keys: []};
+}
+
+function pickCodexCachedModels(root: unknown): string[] {
+  if (!root || typeof root !== 'object' || !Array.isArray((root as any).models)) {
+    return [];
+  }
+
+  return (root as any).models
+    .filter((item: any) => item?.visibility === 'list')
+    .filter((item: any) => item?.supported_in_api !== false)
+    .map((item: any) => String(item?.slug ?? '').trim())
+    .filter(Boolean);
+}
+
+function normalizeClaudeBaseUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/$/, '');
+  if (trimmed.endsWith('/messages')) {
+    return trimmed.slice(0, -'/messages'.length);
+  }
+  if (trimmed.endsWith('/chat/completions')) {
+    return trimmed.slice(0, -'/chat/completions'.length);
+  }
+  return trimmed;
+}
+
+function normalizeClaudeModel(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+  const value = raw.trim();
+  if (!value || !value.toLowerCase().startsWith('claude-')) {
+    return undefined;
+  }
+  return value;
 }
 
 function pickClaudeEnvFromSettings(root: unknown): {
   apiKey?: string;
   baseUrl?: string;
+  model?: string;
 } {
   if (!root || typeof root !== 'object') {
     return {};
@@ -89,17 +181,22 @@ function pickClaudeEnvFromSettings(root: unknown): {
   const blocks = [o.env, o.environmentVariables].filter(Boolean) as Record<string, unknown>[];
   let apiKey: string | undefined;
   let baseUrl: string | undefined;
+  const model = normalizeClaudeModel(o.model);
   for (const b of blocks) {
     const k = b.ANTHROPIC_API_KEY;
     if (typeof k === 'string' && k.trim().length > 0) {
       apiKey = k.trim();
     }
+    const authToken = b.ANTHROPIC_AUTH_TOKEN;
+    if (!apiKey && typeof authToken === 'string' && authToken.trim().length > 0) {
+      apiKey = authToken.trim();
+    }
     const bu = b.ANTHROPIC_BASE_URL;
     if (typeof bu === 'string' && bu.trim().length > 0) {
-      baseUrl = normalizeClaudeMessagesUrl(bu);
+      baseUrl = normalizeClaudeBaseUrl(bu);
     }
   }
-  return {apiKey, baseUrl};
+  return {apiKey, baseUrl, model};
 }
 
 function findSkLikeKey(obj: unknown, depth: number): string | undefined {
@@ -186,7 +283,7 @@ export function readLocalToolConfigs(cwd: string): LocalToolConfigResponse {
       continue;
     }
     const json = readJsonFile(fp);
-    const {apiKey, baseUrl} = pickClaudeEnvFromSettings(json);
+    const {apiKey, baseUrl, model} = pickClaudeEnvFromSettings(json);
     const keys: string[] = [];
     if (apiKey) {
       providers.claude = {...providers.claude, apiKey};
@@ -195,6 +292,13 @@ export function readLocalToolConfigs(cwd: string): LocalToolConfigResponse {
     if (baseUrl) {
       providers.claude = {...providers.claude, baseUrl};
       keys.push('ANTHROPIC_BASE_URL');
+    }
+    if (model) {
+      providers.claude = {
+        ...providers.claude,
+        models: [...new Set([model, ...(providers.claude?.models ?? [])])],
+      };
+      keys.push('model');
     }
     if (keys.length) {
       pushSource(sources, fp, keys);
@@ -206,21 +310,49 @@ export function readLocalToolConfigs(cwd: string): LocalToolConfigResponse {
     : path.join(home, '.codex');
   const codexConfigUser = path.join(codexHome, 'config.toml');
   const codexConfigProject = path.join(cwd, '.codex', 'config.toml');
+  let codexModels: string[] = [];
 
   for (const fp of [codexConfigUser, codexConfigProject]) {
     const raw = readUtf8(fp);
     if (!raw) {
       continue;
     }
-    const base = extractTomlValue(raw, 'openai_base_url');
+    const {value: base, keys: baseKeys} = pickCodexProviderValue(raw, 'base_url');
+    const {value: wireApi, keys: wireKeys} = pickCodexProviderValue(raw, 'wire_api');
+    const sourceKeys = [...baseKeys, ...wireKeys];
+
     if (base) {
       const normalized = base.replace(/\/$/, '');
       const openaiBase = normalized.endsWith('/v1')
         ? normalized
         : `${normalized}/v1`;
       providers.openai = {...providers.openai, baseUrl: openaiBase};
-      pushSource(sources, fp, ['openai_base_url']);
     }
+    if (wireApi === 'responses' || wireApi === 'chat_completions') {
+      providers.openai = {...providers.openai, wireApi};
+    }
+    if (sourceKeys.length) {
+      pushSource(sources, fp, sourceKeys);
+    }
+  }
+
+  const currentModel = extractTomlValue(readUtf8(codexConfigProject) || readUtf8(codexConfigUser) || '', 'model');
+  if (currentModel?.trim()) {
+    codexModels.push(currentModel.trim());
+  }
+
+  const modelsCachePath = path.join(codexHome, 'models_cache.json');
+  if (fs.existsSync(modelsCachePath)) {
+    const modelsJson = readJsonFile(modelsCachePath);
+    const cachedModels = pickCodexCachedModels(modelsJson);
+    if (cachedModels.length) {
+      codexModels = [...new Set([...codexModels, ...cachedModels])];
+      pushSource(sources, modelsCachePath, ['models[].slug']);
+    }
+  }
+
+  if (codexModels.length) {
+    providers.openai = {...providers.openai, models: codexModels};
   }
 
   const authPath = path.join(codexHome, 'auth.json');

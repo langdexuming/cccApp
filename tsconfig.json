@@ -22,5 +22,11 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "dist",
+    "src-tauri/target",
+    "src-tauri/target-repack",
+    "src-tauri/target-hotfix"
+  ]
 }

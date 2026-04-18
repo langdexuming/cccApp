@@ -4,48 +4,14 @@ import { ChatInterface } from './components/ChatInterface';
 import { Chat, AppSettings } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { SettingsModal } from './components/SettingsModal';
+import { DEFAULT_SETTINGS } from './constants';
 import {
   fetchLocalToolConfig,
   mergeLocalToolConfigIntoSettings,
 } from './lib/mergeLocalToolConfig';
 import {loadPersistedState, savePersistedState} from './lib/desktop';
 
-const DEFAULT_SETTINGS: AppSettings = {
-  activeProvider: 'gemini',
-  providers: {
-    gemini: {
-      id: 'gemini',
-      name: 'Gemini',
-      apiKey: '',
-      enabled: true,
-      models: ['gemini-3-flash-preview', 'gemini-3-pro-preview']
-    },
-    claude: {
-      id: 'claude',
-      name: 'Claude',
-      apiKey: '',
-      baseUrl: 'https://api.anthropic.com/v1/messages',
-      enabled: true,
-      models: ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307']
-    },
-    openai: {
-      id: 'openai',
-      name: 'OpenAI',
-      apiKey: '',
-      baseUrl: 'https://api.openai.com/v1',
-      enabled: true,
-      models: ['gpt-4-turbo-preview', 'gpt-4', 'gpt-3.5-turbo']
-    },
-    custom: {
-      id: 'custom',
-      name: '自定义 (OpenAPI)',
-      apiKey: '',
-      baseUrl: '',
-      enabled: true,
-      models: ['default']
-    }
-  }
-};
+ 
 
 export default function App() {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -65,9 +31,25 @@ export default function App() {
         if (cancelled) {
           return;
         }
+
+        const mergeSettings = (saved: any): AppSettings => {
+          return {
+            ...DEFAULT_SETTINGS,
+            ...saved,
+            collaboration: {
+              ...DEFAULT_SETTINGS.collaboration,
+              ...(saved?.collaboration || {})
+            },
+            git: {
+              ...DEFAULT_SETTINGS.git,
+              ...(saved?.git || {})
+            }
+          };
+        };
+
         if (persisted) {
           setChats(persisted.chats || []);
-          setSettings(persisted.settings || DEFAULT_SETTINGS);
+          setSettings(mergeSettings(persisted.settings));
           const nextActiveChatId =
             persisted.activeChatId && persisted.chats.some((item) => item.id === persisted.activeChatId)
               ? persisted.activeChatId
@@ -92,7 +74,8 @@ export default function App() {
         const savedSettings = localStorage.getItem('claude_settings');
         if (savedSettings) {
           try {
-            setSettings(JSON.parse(savedSettings));
+            const parsed = JSON.parse(savedSettings);
+            setSettings(mergeSettings(parsed));
           } catch (e) {
             console.error('Failed to parse saved settings', e);
           }
@@ -142,17 +125,53 @@ export default function App() {
     localStorage.setItem('claude_settings', JSON.stringify(settings));
   }, [hasLoadedPersistedState, settings]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Sidebar: Ctrl + B or Cmd + B
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsSidebarVisible(prev => !prev);
+      }
+      // New Chat: Ctrl + N or Cmd + N (Note: many browsers block this, so maybe Alt + Shift + N as fallback)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        handleNewChat();
+      }
+      // Settings: Ctrl + , or Cmd + ,
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        e.preventDefault();
+        setIsSettingsOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleUpdateChat = (updatedChat: Chat) => {
     setChats(prev => {
-      const index = prev.findIndex(c => c.id === updatedChat.id);
+      // If it's a new chat, add workspace from settings if git is enabled
+      const chatToUpdate = { ...updatedChat };
+      if (settings.git?.enabled && settings.git.repoUrl && !chatToUpdate.workspace) {
+        chatToUpdate.workspace = settings.git.repoUrl;
+      }
+      
+      const index = prev.findIndex(c => c.id === chatToUpdate.id);
       if (index === -1) {
-        return [...prev, updatedChat];
+        return [...prev, chatToUpdate];
       }
       const newChats = [...prev];
-      newChats[index] = updatedChat;
+      newChats[index] = chatToUpdate;
       return newChats;
     });
     setActiveChatId(updatedChat.id);
+  };
+
+  const handleDeleteChat = (id: string) => {
+    setChats(prev => prev.filter(c => c.id !== id));
+    if (activeChatId === id) {
+      setActiveChatId(null);
+    }
   };
 
   const handleNewChat = () => {
@@ -177,6 +196,7 @@ export default function App() {
               activeChatId={activeChatId}
               onSelectChat={setActiveChatId}
               onNewChat={handleNewChat}
+              onDeleteChat={handleDeleteChat}
               isTyping={isTyping}
               onOpenSettings={() => setIsSettingsOpen(true)}
             />
@@ -195,6 +215,7 @@ export default function App() {
           onIsTypingChange={setIsTyping}
           settings={settings}
           onUpdateSettings={setSettings}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
       </main>
 

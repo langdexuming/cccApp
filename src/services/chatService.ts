@@ -22,22 +22,70 @@ export async function* streamChat(
     return;
   }
 
+  // Multi-agent Collaboration Mode
+  if (settings.collaboration?.enabled) {
+    const enabledAgents = settings.collaboration.agents.filter(a => a.enabled);
+    if (enabledAgents.length > 0) {
+      for (const agent of enabledAgents) {
+        yield `\n\n### 🤖 ${agent.name} (${agent.role})\n\n`;
+        
+        const agentProvider = settings.providers[agent.provider];
+        const apiKey = (agent.provider === 'gemini' && !agentProvider.apiKey && typeof process !== 'undefined')
+          ? process.env.GEMINI_API_KEY 
+          : agentProvider.apiKey;
+
+        if (!apiKey) {
+          yield `⚠️ 错误: 代理 ${agent.name} 所需的 ${agentProvider.name} API Key 未配置。\n\n`;
+          continue;
+        }
+
+        const agentMessages = [
+          { role: 'system' as const, content: agent.systemPrompt, id: 'sys', timestamp: Date.now() },
+          ...messages
+        ];
+
+        try {
+          switch (agent.provider) {
+            case 'gemini':
+              yield* streamGemini(agentMessages, apiKey, agent.model, agentProvider.baseUrl);
+              break;
+            case 'claude':
+              yield* streamClaude(agentMessages, apiKey, agent.model, agentProvider.baseUrl);
+              break;
+            case 'openai':
+            case 'custom':
+              yield* streamOpenAI(agentMessages, apiKey, agent.model, agentProvider.baseUrl);
+              break;
+          }
+        } catch (error) {
+          yield `⚠️ 代理 ${agent.name} 响应出错: ${error instanceof Error ? error.message : String(error)}\n\n`;
+        }
+      }
+      return;
+    }
+  }
+
   const provider = settings.providers[settings.activeProvider];
   
-  if (!provider.apiKey) {
+  // Use environment variable as fallback for Gemini
+  const apiKey = (settings.activeProvider === 'gemini' && !provider.apiKey && typeof process !== 'undefined')
+    ? process.env.GEMINI_API_KEY 
+    : provider.apiKey;
+
+  if (!apiKey) {
     throw new Error(`请先在设置中配置 ${provider.name} 的 API Key`);
   }
 
   switch (settings.activeProvider) {
     case 'gemini':
-      yield* streamGemini(messages, provider.apiKey, activeModel, provider.baseUrl);
+      yield* streamGemini(messages, apiKey, activeModel, provider.baseUrl);
       break;
     case 'claude':
-      yield* streamClaude(messages, provider.apiKey, activeModel, provider.baseUrl);
+      yield* streamClaude(messages, apiKey, activeModel, provider.baseUrl);
       break;
     case 'openai':
     case 'custom':
-      yield* streamOpenAI(messages, provider.apiKey, activeModel, provider.baseUrl);
+      yield* streamOpenAI(messages, apiKey, activeModel, provider.baseUrl);
       break;
     default:
       throw new Error('未知的模型提供商');
@@ -65,16 +113,22 @@ function createGeminiClient(apiKey: string, baseUrl?: string) {
 
 async function* streamGemini(messages: Message[], apiKey: string, model: string, baseUrl?: string) {
   const ai = createGeminiClient(apiKey, baseUrl);
-  const history = messages.slice(0, -1).map(m => ({
+  const systemMessage = messages.find(m => m.role === 'system');
+  const chatMessages = messages.filter(m => m.role !== 'system');
+  
+  const history = chatMessages.slice(0, -1).map(m => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.content }]
   }));
 
-  const lastMessage = messages[messages.length - 1].content;
+  const lastMessage = chatMessages[chatMessages.length - 1]?.content || "";
 
   try {
     const chat = ai.chats.create({
       model: model,
+      config: {
+        ...(systemMessage ? { systemInstruction: systemMessage.content } : {})
+      },
       history: history as any,
     });
 
@@ -91,6 +145,9 @@ async function* streamGemini(messages: Message[], apiKey: string, model: string,
 
 async function* streamClaude(messages: Message[], apiKey: string, model: string, baseUrl?: string) {
   const url = baseUrl || 'https://api.anthropic.com/v1/messages';
+  const systemMessage = messages.find(m => m.role === 'system');
+  const chatMessages = messages.filter(m => m.role !== 'system');
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -101,7 +158,8 @@ async function* streamClaude(messages: Message[], apiKey: string, model: string,
     },
     body: JSON.stringify({
       model,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      system: systemMessage?.content,
+      messages: chatMessages.map(m => ({ role: m.role, content: m.content })),
       max_tokens: 4096,
       stream: true
     })

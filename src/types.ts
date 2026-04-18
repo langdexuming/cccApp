@@ -1,4 +1,4 @@
-export type Role = 'user' | 'assistant';
+export type Role = 'user' | 'assistant' | 'system';
 
 export interface Message {
   id: string;
@@ -18,9 +18,31 @@ export interface ProviderConfig {
   models: string[];
 }
 
+export interface AgentConfig {
+  id: string;
+  name: string;
+  role: string;
+  provider: ProviderType;
+  model: string;
+  systemPrompt: string;
+  enabled: boolean;
+}
+
+export interface GitSettings {
+  enabled: boolean;
+  repoUrl: string;
+  branch: string;
+  lastSync?: number;
+}
+
 export interface AppSettings {
   providers: Record<ProviderType, ProviderConfig>;
   activeProvider: ProviderType;
+  collaboration: {
+    enabled: boolean;
+    agents: AgentConfig[];
+  };
+  git: GitSettings;
 }
 
 export interface PersistedAppState {
@@ -37,4 +59,5 @@ export interface Chat {
   model?: string;
   provider?: ProviderType;
   effort?: 'low' | 'medium' | 'high';
+  workspace?: string;
 }

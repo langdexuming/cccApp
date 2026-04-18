@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search } from 'lucide-react';
+import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings } from 'lucide-react';
 import { Message as MessageType, Chat, AppSettings, ProviderType } from '../types';
+import { DEFAULT_SETTINGS } from '../constants';
 import { Message } from './Message';
 import { streamChat, generateTitle } from '../services/chatService';
 import { cn } from '../lib/utils';
@@ -28,6 +29,7 @@ interface ChatInterfaceProps {
   onIsTypingChange?: (isTyping: boolean) => void;
   settings: AppSettings;
   onUpdateSettings: (settings: AppSettings) => void;
+  onOpenSettings: () => void;
 }
 
 export function ChatInterface({ 
@@ -40,7 +42,8 @@ export function ChatInterface({
   onToggleSidebar,
   onIsTypingChange,
   settings,
-  onUpdateSettings
+  onUpdateSettings,
+  onOpenSettings
 }: ChatInterfaceProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -100,7 +103,11 @@ export function ChatInterface({
   }, [isLoading, onIsTypingChange]);
   const [isListening, setIsListening] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
 
@@ -148,8 +155,19 @@ export function ChatInterface({
     }
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (force = false) => {
+    if (force || autoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleScroll = () => {
+    if (scrollRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+      // Allow some threshold (100px)
+      const isAtBottom = scrollHeight - scrollTop <= clientHeight + 100;
+      setAutoScroll(isAtBottom);
+    }
   };
 
   useEffect(() => {
@@ -170,6 +188,17 @@ export function ChatInterface({
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
     }
+  };
+
+  const handleEditMessage = (messageId: string, newContent: string) => {
+    if (!chat) return;
+    const updatedMessages = chat.messages.map(m => 
+      m.id === messageId ? { ...m, content: newContent } : m
+    );
+    onUpdateChat({
+      ...chat,
+      messages: updatedMessages
+    });
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -218,6 +247,9 @@ export function ChatInterface({
     setShowCommands(false);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setIsLoading(true);
+    setErrorMessage(null);
+    setAutoScroll(true);
+    setTimeout(() => scrollToBottom(true), 100);
 
     try {
       const assistantMessageId = (Date.now() + 1).toString();
@@ -243,6 +275,7 @@ export function ChatInterface({
       }
     } catch (error) {
       console.error(error);
+      setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsLoading(false);
     }
@@ -264,10 +297,13 @@ export function ChatInterface({
         <div className="flex items-center gap-4 flex-1">
           <button 
             onClick={onToggleSidebar}
-            className="p-2 hover:bg-zinc-100 rounded-lg transition-colors text-text-secondary hover:text-text-primary"
-            title={isSidebarVisible ? "隐藏侧边栏" : "显示侧边栏"}
+            className="group relative p-2 hover:bg-zinc-100 rounded-lg transition-colors text-text-secondary hover:text-text-primary"
+            title={isSidebarVisible ? "隐藏侧边栏 (⌘B)" : "显示侧边栏 (⌘B)"}
           >
             {isSidebarVisible ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
+            <kbd className="absolute -bottom-6 left-1/2 -translate-x-1/2 hidden group-hover:inline-flex h-4 w-7 items-center justify-center rounded border border-zinc-200 bg-white shadow-sm font-mono text-[9px] font-medium text-zinc-400 z-50">
+              ⌘B
+            </kbd>
           </button>
           <div className="flex items-center gap-2 px-2 py-1 hover:bg-zinc-50 rounded-lg cursor-pointer transition-colors group">
             <h2 className="text-[14px] font-semibold text-text-primary truncate max-w-[150px] md:max-w-xs">
@@ -382,6 +418,29 @@ export function ChatInterface({
 
           <div className="w-px h-4 bg-border-theme mx-1" />
 
+          {/* Collaboration Indicator */}
+          <button
+            onClick={() => onUpdateSettings({
+              ...settings,
+              collaboration: { 
+                ...(settings.collaboration || DEFAULT_SETTINGS.collaboration), 
+                enabled: !(settings.collaboration?.enabled) 
+              }
+            })}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all",
+              settings.collaboration?.enabled 
+                ? "bg-orange-50 text-accent-theme shadow-sm border border-orange-100" 
+                : "text-text-secondary hover:text-text-primary bg-zinc-100/80"
+            )}
+            title={settings.collaboration?.enabled ? "关闭多代理协同" : "开启多代理协同"}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">协同模式</span>
+          </button>
+
+          <div className="w-px h-4 bg-border-theme mx-1" />
+
           <button 
             onClick={() => setShowHistory(true)}
             className="p-2 hover:bg-zinc-100 rounded-lg transition-colors text-text-secondary hover:text-text-primary"
@@ -477,7 +536,11 @@ export function ChatInterface({
       </AnimatePresence>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-[15%] pt-10 pb-5">
+      <div 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-[15%] pt-10 pb-5"
+      >
         {!chat || chat.messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center p-8 text-center space-y-6">
             <motion.div
@@ -497,8 +560,32 @@ export function ChatInterface({
         ) : (
           <div className="flex flex-col pb-40">
             {chat.messages.map((msg) => (
-              <Message key={msg.id} message={msg} />
+              <Message key={msg.id} message={msg} onEdit={handleEditMessage} />
             ))}
+            {errorMessage && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-8 p-6 bg-red-50 border border-red-100 rounded-3xl flex items-start gap-4 shadow-sm"
+              >
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <X className="w-5 h-5 text-red-600" />
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div className="text-base font-bold text-red-900">请求失败</div>
+                  <div className="text-sm text-red-700 font-medium leading-relaxed">
+                    {errorMessage}
+                  </div>
+                  <button 
+                    onClick={() => onOpenSettings()}
+                    className="mt-2 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition-colors flex items-center gap-2"
+                  >
+                    <Settings className="w-4 h-4" />
+                    立即前往设置
+                  </button>
+                </div>
+              </motion.div>
+            )}
             {isLoading && chat.messages[chat.messages.length - 1].role === 'user' && (
               <div className="mb-8 flex gap-5">
                 <div className="flex-shrink-0">
@@ -610,7 +697,7 @@ export function ChatInterface({
                   onClick={() => handleSubmit()}
                   disabled={!input.trim() || isLoading}
                   className={cn(
-                    "px-5 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-2",
+                    "px-5 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-2 group",
                     input.trim() && !isLoading
                       ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20 hover:translate-y-[-1px] active:translate-y-[1px]"
                       : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
@@ -622,6 +709,11 @@ export function ChatInterface({
                     <>
                       <span>发送</span>
                       <ArrowUp className="w-4 h-4" />
+                      {input.trim() && (
+                        <kbd className="hidden lg:inline-flex ml-1 h-3.5 w-6 items-center justify-center rounded border border-white/30 bg-white/10 font-mono text-[9px] font-medium transition-opacity">
+                          ↵
+                        </kbd>
+                      )}
                     </>
                   )}
                 </motion.button>

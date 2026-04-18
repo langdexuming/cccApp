@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Globe, Key, Shield, Info, CheckCircle2, Plus, Trash2, Cpu, FolderInput } from 'lucide-react';
+import { X, Save, Globe, Key, Shield, Info, CheckCircle2, Plus, Trash2, Cpu, FolderInput, Users, GitBranch, Layout, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppSettings, ProviderType, ProviderConfig } from '../types';
+import { DEFAULT_SETTINGS } from '../constants';
 import { cn } from '../lib/utils';
 import {
   fetchLocalToolConfig,
@@ -61,7 +62,8 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsModalProps) {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
-  const [activeTab, setActiveTab] = useState<ProviderType>('gemini');
+  const [gitConfig, setGitConfig] = useState(settings.git || DEFAULT_SETTINGS.git);
+  const [activeTab, setActiveTab] = useState<ProviderType | 'collaboration' | 'git'>('gemini');
   const [showSaved, setShowSaved] = useState(false);
   const [newModelName, setNewModelName] = useState('');
   const [selectedPresetModel, setSelectedPresetModel] = useState('');
@@ -72,6 +74,7 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
   useEffect(() => {
     if (isOpen) {
       setLocalSettings(settings);
+      setGitConfig(settings.git || DEFAULT_SETTINGS.git);
       setSelectedPresetModel('');
       setLocalImportHint(null);
     }
@@ -109,7 +112,11 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
   };
 
   const handleSave = () => {
-    onSave(localSettings);
+    const finalSettings = {
+      ...localSettings,
+      git: gitConfig
+    };
+    onSave(finalSettings);
     setShowSaved(true);
     setTimeout(() => setShowSaved(false), 2000);
   };
@@ -124,13 +131,35 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
     }));
   };
 
+  const updateCollaboration = (updates: Partial<AppSettings['collaboration']>) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      collaboration: { 
+        ...(prev.collaboration || DEFAULT_SETTINGS.collaboration), 
+        ...updates 
+      }
+    }));
+  };
+
+  const updateGit = (updates: Partial<AppSettings['git']>) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      git: { 
+        ...(prev.git || DEFAULT_SETTINGS.git), 
+        ...updates 
+      }
+    }));
+  };
+
   const addModel = (modelName?: string) => {
+    if (activeTab === 'collaboration' || activeTab === 'git') return;
+    const provider = activeTab as ProviderType;
     const value = (modelName ?? newModelName).trim();
     if (!value) return;
-    const currentModels = localSettings.providers[activeTab].models;
+    const currentModels = localSettings.providers[provider].models;
     if (currentModels.includes(value)) return;
     
-    updateProvider(activeTab, {
+    updateProvider(provider, {
       models: [...currentModels, value]
     });
     setNewModelName('');
@@ -140,15 +169,22 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
   };
 
   const removeModel = (modelName: string) => {
-    const currentModels = localSettings.providers[activeTab].models;
-    updateProvider(activeTab, {
+    if (activeTab === 'collaboration' || activeTab === 'git') return;
+    const provider = activeTab as ProviderType;
+    const currentModels = localSettings.providers[provider].models;
+    updateProvider(provider, {
       models: currentModels.filter(m => m !== modelName)
     });
   };
 
-  const availablePresetModels = PROVIDER_MODEL_OPTIONS[activeTab].filter(
-    (model) => !localSettings.providers[activeTab].models.includes(model),
-  );
+  const isProviderTab = activeTab !== 'collaboration' && activeTab !== 'git';
+  const currentProvider = isProviderTab ? activeTab as ProviderType : 'gemini';
+
+  const availablePresetModels = isProviderTab 
+    ? PROVIDER_MODEL_OPTIONS[currentProvider].filter(
+        (model) => !localSettings.providers[currentProvider].models.includes(model),
+      )
+    : [];
   const quickAddModels = availablePresetModels.slice(0, 8);
 
   if (!isOpen) return null;
@@ -191,7 +227,8 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
 
           <div className="flex-1 flex overflow-hidden">
             {/* Sidebar Tabs */}
-            <div className="w-48 border-r border-border-theme bg-zinc-50/30 p-3 space-y-1">
+            <div className="w-48 border-r border-border-theme bg-zinc-50/30 p-3 flex flex-col gap-1">
+              <div className="px-3 py-2 text-[10px] font-bold text-text-secondary uppercase tracking-wider">模型提供商</div>
               {(Object.keys(localSettings.providers) as ProviderType[]).map((id) => (
                 <button
                   key={id}
@@ -210,33 +247,230 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
                   {localSettings.providers[id].name}
                 </button>
               ))}
+
+              <div className="mt-4 px-3 py-2 text-[10px] font-bold text-text-secondary uppercase tracking-wider">扩展功能</div>
+              <button
+                onClick={() => setActiveTab('collaboration')}
+                className={cn(
+                  "w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3",
+                  activeTab === 'collaboration' 
+                    ? "bg-white text-accent-theme shadow-sm border border-border-theme" 
+                    : "text-text-secondary hover:text-text-primary hover:bg-zinc-100"
+                )}
+              >
+                <Users className="w-4 h-4" />
+                多代理协同
+              </button>
+              <button
+                onClick={() => setActiveTab('git')}
+                className={cn(
+                  "w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3",
+                  activeTab === 'git' 
+                    ? "bg-white text-accent-theme shadow-sm border border-border-theme" 
+                    : "text-text-secondary hover:text-text-primary hover:bg-zinc-100"
+                )}
+              >
+                <GitBranch className="w-4 h-4" />
+                Git 管理
+              </button>
             </div>
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto p-8 space-y-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">
-                    {localSettings.providers[activeTab].name} 配置
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-medium text-text-secondary">启用此提供商</span>
-                    <button
-                      onClick={() => updateProvider(activeTab, { enabled: !localSettings.providers[activeTab].enabled })}
-                      className={cn(
-                        "w-8 h-4 rounded-full transition-colors relative",
-                        localSettings.providers[activeTab].enabled ? "bg-accent-theme" : "bg-zinc-200"
-                      )}
+              {activeTab === 'collaboration' ? (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">多代理协同配置</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-medium text-text-secondary">启用协同模式</span>
+                      <button
+                        onClick={() => updateCollaboration({ enabled: !(localSettings.collaboration?.enabled) })}
+                        className={cn(
+                          "w-8 h-4 rounded-full transition-colors relative",
+                          localSettings.collaboration?.enabled ? "bg-accent-theme" : "bg-zinc-200"
+                        )}
+                      >
+                        <div className={cn(
+                          "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all",
+                          localSettings.collaboration?.enabled ? "left-4.5" : "left-0.5"
+                        )} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {(localSettings.collaboration?.agents || DEFAULT_SETTINGS.collaboration.agents).map((agent, idx) => (
+                      <div key={agent.id} className="p-4 bg-zinc-50 border border-border-theme rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Bot className="w-4 h-4 text-accent-theme" />
+                            <span className="text-sm font-bold text-text-primary">{agent.name}</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const currentAgents = localSettings.collaboration?.agents || DEFAULT_SETTINGS.collaboration.agents;
+                              const newAgents = [...currentAgents];
+                              newAgents[idx] = { ...agent, enabled: !agent.enabled };
+                              updateCollaboration({ agents: newAgents });
+                            }}
+                            className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded-md transition-colors",
+                              agent.enabled ? "bg-green-100 text-green-700" : "bg-zinc-200 text-zinc-500"
+                            )}
+                          >
+                            {agent.enabled ? '已启用' : '已禁用'}
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-text-secondary uppercase">模型提供商</label>
+                            <select 
+                              value={agent.provider}
+                              onChange={(e) => {
+                                const currentAgents = localSettings.collaboration?.agents || DEFAULT_SETTINGS.collaboration.agents;
+                                const newAgents = [...currentAgents];
+                                newAgents[idx] = { ...agent, provider: e.target.value as any };
+                                updateCollaboration({ agents: newAgents });
+                              }}
+                              className="w-full px-3 py-1.5 bg-white border border-border-theme rounded-lg text-xs"
+                            >
+                              {Object.keys(localSettings.providers).map(p => (
+                                <option key={p} value={p}>{localSettings.providers[p as ProviderType].name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-text-secondary uppercase">角色</label>
+                            <input 
+                              value={agent.role}
+                              onChange={(e) => {
+                                const currentAgents = localSettings.collaboration?.agents || DEFAULT_SETTINGS.collaboration.agents;
+                                const newAgents = [...currentAgents];
+                                newAgents[idx] = { ...agent, role: e.target.value };
+                                updateCollaboration({ agents: newAgents });
+                              }}
+                              className="w-full px-3 py-1.5 bg-white border border-border-theme rounded-lg text-xs"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-text-secondary uppercase">系统提示词</label>
+                          <textarea 
+                            value={agent.systemPrompt}
+                            onChange={(e) => {
+                              const currentAgents = localSettings.collaboration?.agents || DEFAULT_SETTINGS.collaboration.agents;
+                              const newAgents = [...currentAgents];
+                              newAgents[idx] = { ...agent, systemPrompt: e.target.value };
+                              updateCollaboration({ agents: newAgents });
+                            }}
+                            rows={2}
+                            className="w-full px-3 py-1.5 bg-white border border-border-theme rounded-lg text-xs resize-none"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : activeTab === 'git' ? (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">Git 版本管理</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-medium text-text-secondary">启用 Git 同步</span>
+                      <button
+                        onClick={() => setGitConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
+                        className={cn(
+                          "w-8 h-4 rounded-full transition-colors relative",
+                          gitConfig.enabled ? "bg-accent-theme" : "bg-zinc-200"
+                        )}
+                      >
+                        <div className={cn(
+                          "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all",
+                          gitConfig.enabled ? "left-4.5" : "left-0.5"
+                        )} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-text-secondary flex items-center gap-2">
+                        <Globe className="w-3 h-3" />
+                        远程仓库地址
+                      </label>
+                      <input
+                        type="text"
+                        value={gitConfig.repoUrl || ''}
+                        onChange={(e) => setGitConfig(prev => ({ ...prev, repoUrl: e.target.value }))}
+                        placeholder="https://github.com/user/repo.git"
+                        className="w-full px-4 py-2.5 bg-zinc-50 border border-border-theme rounded-xl text-sm outline-none focus:border-accent-theme"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-text-secondary flex items-center gap-2">
+                        <GitBranch className="w-3 h-3" />
+                        分支
+                      </label>
+                      <input
+                        type="text"
+                        value={gitConfig.branch || 'main'}
+                        onChange={(e) => setGitConfig(prev => ({ ...prev, branch: e.target.value }))}
+                        placeholder="main"
+                        className="w-full px-4 py-2.5 bg-zinc-50 border border-border-theme rounded-xl text-sm outline-none focus:border-accent-theme"
+                      />
+                    </div>
+                    
+                    <button 
+                      onClick={() => {
+                        updateGit(gitConfig);
+                        handleSave();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 rounded-xl text-xs font-bold transition-all active:scale-95 border border-accent-theme/20"
                     >
-                      <div className={cn(
-                        "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all",
-                        localSettings.providers[activeTab].enabled ? "left-4.5" : "left-0.5"
-                      )} />
+                      <Save className="w-4 h-4" />
+                      应用并保存 Git 配置
+                    </button>
+                  </div>
+                  
+                  <div className="flex gap-3 pt-2">
+                    <button 
+                      onClick={() => alert('Git Pull 功能需要 Tauri 后端支持')}
+                      className="flex-1 py-3 bg-zinc-50 hover:bg-zinc-100 border border-border-theme text-zinc-900 rounded-xl text-xs font-bold transition-all active:scale-95"
+                    >
+                      拉取 (Pull)
+                    </button>
+                    <button 
+                      onClick={() => alert('Git Push 功能需要 Tauri 后端支持')}
+                      className="flex-1 py-3 bg-zinc-50 hover:bg-zinc-100 border border-border-theme text-zinc-900 rounded-xl text-xs font-bold transition-all active:scale-95"
+                    >
+                      推送 (Push)
                     </button>
                   </div>
                 </div>
-
+              ) : (
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">
+                      {localSettings.providers[activeTab as ProviderType].name} 配置
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-medium text-text-secondary">启用此提供商</span>
+                      <button
+                        onClick={() => updateProvider(activeTab as ProviderType, { enabled: !localSettings.providers[activeTab as ProviderType].enabled })}
+                        className={cn(
+                          "w-8 h-4 rounded-full transition-colors relative",
+                          localSettings.providers[activeTab as ProviderType].enabled ? "bg-accent-theme" : "bg-zinc-200"
+                        )}
+                      >
+                        <div className={cn(
+                          "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all",
+                          localSettings.providers[activeTab as ProviderType].enabled ? "left-4.5" : "left-0.5"
+                        )} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-text-secondary flex items-center gap-2">
                       <Key className="w-3 h-3" />
@@ -244,14 +478,14 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
                     </label>
                     <input
                       type="password"
-                      value={localSettings.providers[activeTab].apiKey}
-                      onChange={(e) => updateProvider(activeTab, { apiKey: e.target.value })}
-                      placeholder={`输入您的 ${localSettings.providers[activeTab].name} API Key`}
+                      value={localSettings.providers[currentProvider].apiKey}
+                      onChange={(e) => updateProvider(currentProvider, { apiKey: e.target.value })}
+                      placeholder={`输入您的 ${localSettings.providers[currentProvider].name} API Key`}
                       className="w-full px-4 py-2.5 bg-zinc-50 border border-border-theme rounded-xl text-sm focus:ring-4 focus:ring-accent-theme/5 focus:border-accent-theme transition-all outline-none"
                     />
                   </div>
 
-                  {(activeTab === 'gemini' || activeTab === 'claude' || activeTab === 'openai' || activeTab === 'custom') && (
+                  {isProviderTab && (
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold text-text-secondary flex items-center gap-2">
                         <Globe className="w-3 h-3" />
@@ -259,12 +493,12 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
                       </label>
                       <input
                         type="text"
-                        value={localSettings.providers[activeTab].baseUrl || ''}
-                        onChange={(e) => updateProvider(activeTab, { baseUrl: e.target.value })}
+                        value={localSettings.providers[currentProvider].baseUrl || ''}
+                        onChange={(e) => updateProvider(currentProvider, { baseUrl: e.target.value })}
                         placeholder={
-                          activeTab === 'gemini'
+                          currentProvider === 'gemini'
                             ? 'https://generativelanguage.googleapis.com'
-                            : activeTab === 'claude'
+                            : currentProvider === 'claude'
                               ? 'https://api.anthropic.com/v1'
                               : 'https://api.openai.com/v1'
                         }
@@ -343,7 +577,7 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
                           className="w-full px-3 py-1.5 bg-zinc-50 border border-border-theme rounded-lg text-[10px] outline-none focus:border-accent-theme transition-all"
                         />
                       </div>
-                      {localSettings.providers[activeTab].models
+                      {localSettings.providers[currentProvider].models
                         .filter(m => m.toLowerCase().includes(modelFilter.toLowerCase()))
                         .map((model) => (
                         <div 
@@ -395,8 +629,9 @@ export function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsMod
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
+        </div>
 
           {/* Footer */}
           <div className="p-4 border-t border-border-theme bg-zinc-50/50 flex items-center justify-between px-6">

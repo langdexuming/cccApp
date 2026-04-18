@@ -1,12 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings } from 'lucide-react';
+import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings, Bug, CheckCircle2, FileText } from 'lucide-react';
 import { Message as MessageType, Chat, AppSettings, ProviderType } from '../types';
 import { DEFAULT_SETTINGS } from '../constants';
 import { Message } from './Message';
+import { ProjectTimeline } from './ProjectTimeline';
 import { streamChat, generateTitle } from '../services/chatService';
+import { ProjectPhase, Task } from '../types';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
+
+const AI_PROMPTS = [
+  { icon: <Terminal className="w-3" />, text: "解释这段代码的工作原理", color: "text-blue-600 bg-blue-50/50" },
+  { icon: <Zap className="w-3" />, text: "重构并优化这段逻辑", color: "text-amber-600 bg-amber-50/50" },
+  { icon: <Bug className="w-3" />, text: "查找并修复潜在的 Bug", color: "text-red-600 bg-red-50/50" },
+  { icon: <CheckCircle2 className="w-3" />, text: "为功能编写单元测试", color: "text-emerald-600 bg-emerald-50/50" },
+  { icon: <FileText className="w-3" />, text: "添加详细的中文注释", color: "text-purple-600 bg-purple-50/50" },
+];
 
 function pickValidModel(
   preferredModel: string | undefined,
@@ -152,6 +162,20 @@ export function ChatInterface({
       } catch (error) {
         console.error('Failed to start recognition', error);
       }
+    }
+  };
+
+  const handlePromptClick = (text: string) => {
+    setInput(text);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      // Adjust height in next tick
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        }
+      }, 0);
     }
   };
 
@@ -559,6 +583,28 @@ export function ChatInterface({
           </div>
         ) : (
           <div className="flex flex-col pb-40">
+            {settings.collaboration.enabled && (
+              <ProjectTimeline 
+                currentPhase={chat.currentPhase || 'planning'}
+                tasks={chat.tasks || []}
+                onUpdatePhase={(phase) => {
+                  onUpdateChat({ ...chat, currentPhase: phase });
+                }}
+                onAddTask={() => {
+                  const title = prompt('输入新任务名称:');
+                  if (title) {
+                    const newTask: Task = {
+                      id: Date.now().toString(),
+                      title,
+                      status: 'todo',
+                      assigneeId: 'pm',
+                      phase: chat.currentPhase || 'planning'
+                    };
+                    onUpdateChat({ ...chat, tasks: [...(chat.tasks || []), newTask] });
+                  }
+                }}
+              />
+            )}
             {chat.messages.map((msg) => (
               <Message key={msg.id} message={msg} onEdit={handleEditMessage} />
             ))}
@@ -606,6 +652,35 @@ export function ChatInterface({
       {/* Input Area */}
       <div className="absolute bottom-0 left-0 right-0 px-[15%] pb-10 bg-gradient-to-t from-white via-white/90 to-transparent pt-10">
         <div className="max-w-3xl mx-auto relative">
+          {/* AI Prompts / Feature Hints */}
+          {!input.trim() && !isLoading && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-none no-scrollbar"
+            >
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-accent-theme/20 bg-accent-theme/5 text-accent-theme text-[10px] font-bold uppercase tracking-wider shrink-0">
+                <Sparkles className="w-3 h-3" />
+                AI 提示
+              </div>
+              <div className="flex gap-2">
+                {AI_PROMPTS.map((prompt, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handlePromptClick(prompt.text)}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all whitespace-nowrap active:scale-95 border border-transparent hover:border-border-theme hover:bg-white hover:shadow-sm",
+                      prompt.color
+                    )}
+                  >
+                    {prompt.icon}
+                    {prompt.text}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
           {/* Shortcut Commands Menu */}
           <AnimatePresence>
             {showCommands && (

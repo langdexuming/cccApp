@@ -3,6 +3,7 @@ import {motion, AnimatePresence} from 'motion/react';
 import {ChatInterface} from './components/ChatInterface';
 import {SettingsModal} from './components/SettingsModal';
 import {Sidebar} from './components/Sidebar';
+import {ProjectAnalyst} from './components/ProjectAnalyst';
 import type {AppSettings, Chat} from './types';
 import {loadPersistedState, savePersistedState} from './lib/desktop';
 import {
@@ -17,6 +18,7 @@ export default function App() {
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAnalystOpen, setIsAnalystOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
   const [hasLoadedPersistedState, setHasLoadedPersistedState] = useState(false);
 
@@ -155,6 +157,7 @@ export default function App() {
               onDeleteChat={handleDeleteChat}
               isTyping={isTyping}
               onOpenSettings={() => setIsSettingsOpen(true)}
+              onOpenAnalyst={() => setIsAnalystOpen(true)}
             />
           </motion.div>
         )}
@@ -182,6 +185,16 @@ export default function App() {
         onSave={(newSettings) => {
           setSettings(normalizeSettings(newSettings));
           setIsSettingsOpen(false);
+        }}
+      />
+
+      <ProjectAnalyst 
+        isOpen={isAnalystOpen}
+        onClose={() => setIsAnalystOpen(false)}
+        settings={settings.analysis}
+        allProviders={settings.providers}
+        onUpdateSettings={(analysisSettings) => {
+          setSettings(prev => ({ ...prev, analysis: analysisSettings }));
         }}
       />
     </div>

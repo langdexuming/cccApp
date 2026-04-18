@@ -30,6 +30,11 @@ const DEFAULT_GIT: AppSettings['git'] = {
   branch: 'main',
 };
 
+const DEFAULT_ANALYSIS: AppSettings['analysis'] = {
+  provider: 'gemini',
+  autoScan: true,
+};
+
 export const BUILTIN_PROVIDER_MODELS: Record<ProviderType, string[]> = {
   gemini: [
     'gemini-3-flash-preview',
@@ -184,6 +189,7 @@ export function createDefaultSettings(): AppSettings {
       agents: DEFAULT_COLLABORATION.agents.map((agent) => ({...agent})),
     },
     git: {...DEFAULT_GIT},
+    analysis: {...DEFAULT_ANALYSIS},
   };
 }
 
@@ -233,6 +239,10 @@ export function normalizeSettings(raw?: Partial<AppSettings> | null): AppSetting
     git: {
       ...DEFAULT_GIT,
       ...(raw?.git ?? {}),
+    },
+    analysis: {
+      ...DEFAULT_ANALYSIS,
+      ...(raw?.analysis ?? {}),
     },
   };
 }

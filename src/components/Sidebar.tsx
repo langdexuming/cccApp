@@ -1,4 +1,4 @@
-import { Plus, MessageSquare, Search, Settings, User, GitBranch, Trash2, ChevronDown, Folder } from 'lucide-react';
+import { Plus, MessageSquare, Search, Settings, User, GitBranch, Trash2, ChevronDown, Folder, Lightbulb } from 'lucide-react';
 import { Chat } from '../types';
 import { cn } from '../lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -13,9 +13,10 @@ interface SidebarProps {
   onDeleteChat: (id: string) => void;
   isTyping?: boolean;
   onOpenSettings?: () => void;
+  onOpenAnalyst?: () => void;
 }
 
-export function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, isTyping, onOpenSettings }: SidebarProps) {
+export function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, isTyping, onOpenSettings, onOpenAnalyst }: SidebarProps) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const groupedChats = useMemo(() => {
@@ -154,6 +155,16 @@ export function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDelete
           <kbd className="hidden group-hover:inline-flex h-4 w-7 items-center justify-center rounded border border-zinc-200 bg-zinc-50 font-mono text-[9px] font-medium text-zinc-400">
             ⌘,
           </kbd>
+        </button>
+        <button 
+          onClick={onOpenAnalyst}
+          className="w-full flex items-center justify-between px-3 py-2 text-sm text-text-secondary hover:bg-zinc-200/50 rounded-lg transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <Lightbulb className="w-4 h-4 text-amber-500" />
+            项目 AI 分析
+          </div>
+          <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
         </button>
         <div className="pt-3 flex items-center gap-3 px-3 py-2">
           <div className="w-8 h-8 rounded-full bg-zinc-200 flex items-center justify-center font-bold text-xs">

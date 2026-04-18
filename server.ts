@@ -1,11 +1,53 @@
 import { exec } from 'child_process';
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// --- KAIROS: Always-on Background Agent Simulation ---
+const MEMORY_FILE = path.join(process.cwd(), 'ai_memory.json');
+const INITIAL_MEMORY = { logs: [], dreams: [], lastPatrol: null };
+
+function getMemory() {
+  if (!fs.existsSync(MEMORY_FILE)) return INITIAL_MEMORY;
+  try {
+    return JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf-8'));
+  } catch {
+    return INITIAL_MEMORY;
+  }
+}
+
+function updateMemory(updater: (mem: any) => void) {
+  const mem = getMemory();
+  updater(mem);
+  fs.writeFileSync(MEMORY_FILE, JSON.stringify(mem, null, 2));
+}
+
+// Background Task Simulation
+setInterval(() => {
+  const now = new Date().toISOString();
+  updateMemory(mem => {
+    const events = [
+      "巡逻：未发现显著安全漏洞。",
+      "代码压缩建议：检测到冗余 CSS 模块。",
+      "KAIROS 梦境：正在模拟 2027 年的 WebGPU 渲染路径...",
+      "自动化：已优化部分未使用的导入项 (Mock)。",
+      "健康检查：API 响应时间稳定在 42ms。"
+    ];
+    const newLog = {
+      timestamp: now,
+      event: events[Math.floor(Math.random() * events.length)],
+      type: 'patrol'
+    };
+    mem.logs = [newLog, ...(mem.logs || [])].slice(0, 50);
+    mem.lastPatrol = now;
+  });
+}, 60000); 
+// --- End KAIROS ---
 
 async function startServer() {
   const app = express();
@@ -159,6 +201,11 @@ async function startServer() {
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to apply fix' });
     }
+  });
+
+  // KAIROS API: Fetch background logs
+  app.get('/api/kairos/logs', (req: any, res: any) => {
+    res.json(getMemory());
   });
 
   // Vite middleware for development

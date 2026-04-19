@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Terminal, Cpu, ShieldCheck, Zap, Activity, Info, RefreshCw, Trash2, Moon, Sun, Database, Search } from 'lucide-react';
-import { usePetGame, SPECIES, AttributeKey } from '../hooks/usePetGame';
+import { usePetGame, SPECIES, AttributeKey, ActionType } from '../hooks/usePetGame';
 import { cn } from '../lib/utils';
 
 export function TerminalPet() {
@@ -15,9 +15,13 @@ export function TerminalPet() {
     setCommand('');
 
     if (cmd === '/buddy') {
-      action('sleep'); // Just an example of interaction
+      action('sleep');
     } else if (cmd === 'ls') {
-      summon(); // Reset/Summon as simulation
+      summon();
+    } else if (cmd === 'help') {
+      action('help' as ActionType);
+    } else if (cmd === '/analyze' || cmd === 'analyze') {
+      action('analyze' as ActionType);
     }
   };
 
@@ -46,7 +50,7 @@ export function TerminalPet() {
       <div className="bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-[#33ff33]/20">
         <div className="flex items-center gap-3">
           <Terminal className="w-5 h-5 text-[#33ff33]" />
-          <span className="text-sm font-bold tracking-widest uppercase">Project_Soul_v1.0.4.sh</span>
+          <span className="text-sm font-bold tracking-widest uppercase truncate">Analysis_Familiar_v2.1.sys</span>
         </div>
         <div className="flex items-center gap-4 text-[10px] opacity-70">
           <div className="flex items-center gap-1">
@@ -164,6 +168,13 @@ export function TerminalPet() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
+            <button 
+              onClick={() => action('analyze' as ActionType)}
+              className="col-span-2 group p-4 bg-[#33ff33]/10 hover:bg-[#33ff33] hover:text-[#0c0c0c] transition-all rounded-xl border-2 border-[#33ff33] text-xs font-black flex items-center justify-center gap-3 shadow-[0_0_15px_rgba(51,255,51,0.2)]"
+            >
+              <Search className="w-5 h-5 group-hover:scale-125 transition-transform" />
+              使魔深度分析 (ANALYZE)
+            </button>
             <button 
               onClick={() => action('debug')}
               className="group p-3 bg-[#1a1a1a] hover:bg-[#33ff33] hover:text-[#0c0c0c] transition-all rounded-xl border border-[#33ff33]/30 text-[10px] font-bold flex flex-col items-center gap-2"

@@ -141,21 +141,16 @@ export function Message({ message, onEdit }: MessageProps) {
         isUser ? "flex-row-reverse" : "flex-row"
       )}>
         <div className="flex-shrink-0">
-          <div className={cn(
-            "w-6 h-6 rounded flex items-center justify-center",
-            isUser ? "bg-[#555]" : "bg-accent-theme"
-          )}>
-            {isUser ? (
-              <User className="w-4 h-4 text-white" />
-            ) : (
-              <Bot className="w-4 h-4 text-white" />
-            )}
-          </div>
+          {!isUser && (
+            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-transparent border border-border-theme">
+              <Bot className="w-4 h-4 text-accent-theme" />
+            </div>
+          )}
         </div>
         
         <div className={cn(
           "flex-1 min-w-0 space-y-2 relative group/content",
-          isUser && !isEditing ? "bg-msg-user p-3 px-4 rounded-xl" : ""
+          isUser && !isEditing ? "bg-[#F3F3F2] p-4 rounded-2xl max-w-[85%]" : "p-1"
         )}>
           {isEditing ? (
             <div className="space-y-3">
@@ -189,8 +184,8 @@ export function Message({ message, onEdit }: MessageProps) {
             </div>
           ) : (
             <div className={cn(
-              "prose prose-zinc max-w-none prose-p:leading-relaxed prose-p:text-base prose-headings:text-xl prose-headings:mb-3",
-              isUser ? "prose-invert" : ""
+              "prose prose-zinc max-w-none prose-p:leading-relaxed prose-p:text-[15px] prose-p:text-text-primary prose-headings:text-xl prose-headings:mb-3 prose-strong:text-text-primary",
+              isUser ? "" : ""
             )}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}

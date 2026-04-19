@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings, Bug, CheckCircle2, FileText } from 'lucide-react';
+import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings, Bug, CheckCircle2, FileText, Rocket, Box } from 'lucide-react';
 import { Message as MessageType, Chat, AppSettings, ProviderType } from '../types';
 import { DEFAULT_SETTINGS } from '../constants';
 import { Message } from './Message';
@@ -40,6 +40,8 @@ interface ChatInterfaceProps {
   settings: AppSettings;
   onUpdateSettings: (settings: AppSettings) => void;
   onOpenSettings: () => void;
+  isDesignPanelOpen: boolean;
+  onToggleDesignPanel: () => void;
 }
 
 export function ChatInterface({ 
@@ -53,7 +55,9 @@ export function ChatInterface({
   onIsTypingChange,
   settings,
   onUpdateSettings,
-  onOpenSettings
+  onOpenSettings,
+  isDesignPanelOpen,
+  onToggleDesignPanel
 }: ChatInterfaceProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -81,7 +85,8 @@ export function ChatInterface({
     gemini: Zap,
     claude: Brain,
     openai: Command,
-    custom: Globe
+    custom: Globe,
+    vertex_ai: Sparkles
   };
 
   const providers = (Object.values(settings.providers) as any[]).filter(p => p.enabled);
@@ -472,6 +477,20 @@ export function ChatInterface({
           >
             <History className="w-5 h-5" />
           </button>
+
+          <div className="w-px h-4 bg-border-theme mx-1" />
+
+          {/* Toggle Design Panel (Claude Artifacts style) */}
+          <button 
+            onClick={onToggleDesignPanel}
+            className={cn(
+              "p-2 rounded-lg transition-all flex items-center gap-2",
+              isDesignPanelOpen ? "bg-accent-theme text-white shadow-sm" : "hover:bg-zinc-100 text-text-secondary"
+            )}
+            title={isDesignPanelOpen ? "收起设计面板" : "展开设计面板 (Artifacts)"}
+          >
+            <Rocket className={cn("w-5 h-5", isDesignPanelOpen && "animate-pulse")} />
+          </button>
         </div>
       </header>
 
@@ -650,34 +669,25 @@ export function ChatInterface({
       </div>
 
       {/* Input Area */}
-      <div className="absolute bottom-0 left-0 right-0 px-[15%] pb-10 bg-gradient-to-t from-white via-white/90 to-transparent pt-10">
-        <div className="max-w-3xl mx-auto relative">
+      <div className="absolute bottom-0 left-0 right-0 px-4 md:px-[10%] pb-8 bg-gradient-to-t from-bg-main via-bg-main/95 to-transparent pt-20 z-20">
+        <div className="max-w-3xl mx-auto relative group">
           {/* AI Prompts / Feature Hints */}
           {!input.trim() && !isLoading && (
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-none no-scrollbar"
+              className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-none no-scrollbar justify-center"
             >
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-accent-theme/20 bg-accent-theme/5 text-accent-theme text-[10px] font-bold uppercase tracking-wider shrink-0">
-                <Sparkles className="w-3 h-3" />
-                AI 提示
-              </div>
-              <div className="flex gap-2">
-                {AI_PROMPTS.map((prompt, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handlePromptClick(prompt.text)}
-                    className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all whitespace-nowrap active:scale-95 border border-transparent hover:border-border-theme hover:bg-white hover:shadow-sm",
-                      prompt.color
-                    )}
-                  >
-                    {prompt.icon}
-                    {prompt.text}
-                  </button>
-                ))}
-              </div>
+              {AI_PROMPTS.slice(0, 3).map((prompt, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handlePromptClick(prompt.text)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-medium bg-white border border-border-theme hover:border-accent-theme/30 hover:shadow-md transition-all active:scale-95 whitespace-nowrap text-text-primary"
+                >
+                  <span className="opacity-70">{prompt.icon}</span>
+                  {prompt.text}
+                </button>
+              ))}
             </motion.div>
           )}
 
@@ -690,7 +700,7 @@ export function ChatInterface({
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                 className="absolute bottom-full mb-4 left-0 w-64 bg-white border border-border-theme rounded-2xl shadow-2xl overflow-hidden z-50 p-2"
               >
-                <div className="px-3 py-2 text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-zinc-50 mb-1 flex items-center gap-2">
+                <div className="px-3 py-2 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-zinc-50 mb-1 flex items-center gap-2">
                   <Terminal className="w-3 h-3" />
                   快捷命令
                 </div>
@@ -702,10 +712,10 @@ export function ChatInterface({
                       setShowCommands(false);
                       textareaRef.current?.focus();
                     }}
-                    className="w-full flex flex-col items-start px-3 py-2 hover:bg-zinc-50 rounded-xl transition-colors text-left group"
+                    className="w-full flex flex-col items-start px-3 py-2.5 hover:bg-zinc-50 rounded-xl transition-colors text-left group"
                   >
-                    <span className="text-sm font-bold text-accent-theme group-hover:scale-105 transition-transform">{cmd.key}</span>
-                    <span className="text-[11px] text-text-secondary">{cmd.desc}</span>
+                    <span className="text-sm font-bold text-accent-theme">{cmd.key}</span>
+                    <span className="text-[11px] text-text-secondary font-medium">{cmd.desc}</span>
                   </button>
                 ))}
               </motion.div>
@@ -714,13 +724,11 @@ export function ChatInterface({
 
           <motion.div 
             layout
-            initial={false}
             className={cn(
-              "relative flex flex-col p-4 bg-white border rounded-2xl transition-all duration-300 ease-out min-h-[100px]",
-              "shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_4px_6px_-2px_rgba(0,0,0,0.05)]",
-              "hover:shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)]",
-              "focus-within:border-accent-theme focus-within:ring-4 focus-within:ring-accent-theme/5 focus-within:shadow-[0_20px_25px_-5px_rgba(0,0,0,0.1),0_10px_10px_-5px_rgba(0,0,0,0.04)]",
-              input.trim() ? "border-accent-theme/30" : "border-border-theme"
+              "relative flex flex-col p-4 bg-white border border-border-theme rounded-2xl transition-all duration-300 ease-out min-h-[120px]",
+              "shadow-[0_8px_30px_rgb(0,0,0,0.04)]",
+              "focus-within:shadow-[0_20px_40px_rgba(0,0,0,0.08)] focus-within:border-accent-theme/40",
+              input.trim() ? "border-accent-theme/20 shadow-[0_12px_40px_rgba(217,119,87,0.08)]" : ""
             )}
           >
             <textarea
@@ -729,79 +737,65 @@ export function ChatInterface({
               value={input}
               onChange={handleInput}
               onKeyDown={handleKeyDown}
-              placeholder="输入消息以继续对话..."
-              className="flex-1 bg-transparent border-0 focus:ring-0 resize-none py-0 text-text-primary placeholder-text-secondary text-base leading-relaxed"
+              placeholder="在这里输入您的问题..."
+              className="flex-1 bg-transparent border-0 focus:ring-0 resize-none py-2 px-1 text-text-primary placeholder-zinc-400 text-[15px] leading-relaxed"
             />
-            <div className="flex justify-between items-center mt-4 pt-2 border-t border-zinc-50">
+            <div className="flex justify-between items-center mt-3 pt-3 border-t border-zinc-50">
               <div className="flex gap-1 items-center">
-                <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-zinc-50 rounded-lg transition-all active:scale-95">
-                  <Paperclip className="w-4 h-4" />
-                  <span className="hidden sm:inline">附件</span>
-                </button>
-                <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-zinc-50 rounded-lg transition-all active:scale-95">
-                  <Sparkles className="w-4 h-4" />
-                  <span className="hidden sm:inline">提示词库</span>
-                </button>
+                <div className="relative group/upload">
+                  <button className="p-2 text-text-secondary hover:text-text-primary hover:bg-zinc-50 rounded-xl transition-all active:scale-95 flex items-center gap-1.5">
+                    <Paperclip className="w-4 h-4" />
+                    <span className="text-[10px] font-bold text-zinc-400 group-hover/upload:text-accent-theme transition-colors">DOCX/PPTX/XLSX</span>
+                  </button>
+                  {/* Floating format hint */}
+                  <div className="absolute bottom-full mb-2 left-0 opacity-0 group-hover/upload:opacity-100 transition-all pointer-events-none translate-y-2 group-hover/upload:translate-y-0">
+                    <div className="bg-text-primary text-white px-3 py-1.5 rounded-lg text-[9px] font-bold shadow-xl whitespace-nowrap flex items-center gap-2">
+                      <Box className="w-3 h-3 text-accent-theme" />
+                      支持全量文档/网页资产抓取
+                    </div>
+                  </div>
+                </div>
+                <div className="w-px h-4 bg-zinc-100 mx-1" />
                 <button 
                   onClick={toggleListening}
                   className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 text-xs transition-all rounded-lg active:scale-95",
+                    "p-2 rounded-xl transition-all active:scale-95",
                     isListening ? "text-red-500 bg-red-50" : "text-text-secondary hover:text-text-primary hover:bg-zinc-50"
                   )}
+                  title="语音输入 / 手谈标注"
                 >
                   {isListening ? <MicOff className="w-4 h-4 animate-pulse" /> : <Mic className="w-4 h-4" />}
-                  <span className="hidden sm:inline">{isListening ? '正在录音...' : '语音输入'}</span>
                 </button>
-                {input.length > 0 && (
-                  <motion.span 
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="ml-2 text-[10px] font-medium text-text-secondary/50 tabular-nums"
-                  >
-                    {input.length} 字符
-                  </motion.span>
-                )}
               </div>
               
-              <AnimatePresence mode="wait">
-                <motion.button
-                  key={input.trim() ? 'send' : 'empty'}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
+              <div className="flex items-center gap-3">
+                {input.length > 0 && (
+                  <span className="text-[10px] font-medium text-text-secondary/40 tabular-nums">
+                    {input.length}
+                  </span>
+                )}
+                <button
                   onClick={() => handleSubmit()}
                   disabled={!input.trim() || isLoading}
                   className={cn(
-                    "px-5 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-2 group",
+                    "w-10 h-10 rounded-xl transition-all flex items-center justify-center group",
                     input.trim() && !isLoading
-                      ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20 hover:translate-y-[-1px] active:translate-y-[1px]"
-                      : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+                      ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20 hover:scale-105 active:scale-95"
+                      : "bg-[#F3F3F2] text-zinc-300"
                   )}
                 >
                   {isLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin text-accent-theme" />
                   ) : (
-                    <>
-                      <span>发送</span>
-                      <ArrowUp className="w-4 h-4" />
-                      {input.trim() && (
-                        <kbd className="hidden lg:inline-flex ml-1 h-3.5 w-6 items-center justify-center rounded border border-white/30 bg-white/10 font-mono text-[9px] font-medium transition-opacity">
-                          ↵
-                        </kbd>
-                      )}
-                    </>
+                    <ArrowUp className="w-5 h-5" />
                   )}
-                </motion.button>
-              </AnimatePresence>
+                </button>
+              </div>
             </div>
           </motion.div>
-          <motion.p 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="mt-3 text-center text-[10px] text-text-secondary/60"
-          >
-            Claude 可能会犯错。请核实重要信息。
-          </motion.p>
+          <p className="mt-4 text-center text-[10px] text-zinc-400 font-medium">
+            项目全生命周期设计系统 · 由 Gemini & Vertex AI 提供支持
+          </p>
         </div>
       </div>
     </div>

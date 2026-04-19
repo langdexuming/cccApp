@@ -1,6 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Lightbulb, ChevronRight, AlertCircle, TrendingUp, Cpu, ShieldCheck, Loader2, X, RefreshCw, Sparkles, Rocket, FileCode, CheckCircle2, Search, Zap, Globe, FileText, Download, Milestone, Calendar, Moon, MessageSquare, Brain, Activity, Mic, Share2, Terminal } from 'lucide-react';
+import { 
+  Lightbulb, ChevronRight, AlertCircle, TrendingUp, Cpu, ShieldCheck, Loader2, X, RefreshCw, Sparkles, Rocket, FileCode, CheckCircle2, 
+  Search, Zap, Globe, FileText, Download, Milestone, Calendar, Moon, MessageSquare, Brain, Activity, Mic, Share2, Terminal,
+  MousePointer2, Sliders, Type, Palette, PenTool, Layers, ExternalLink, Box, Palette as BrandIcon, Package
+} from 'lucide-react';
 import { getProjectInsights, getInsightFix, generateProjectDocs, runPreflightChecks, generateDeploymentConfig, applyInsightFix, getProjectRoadmap, getProjectDreams, getCoordinatorPlan, runUltraplan, getKairosLogs, PreflightCheck, DeploymentFile, RoadmapItem, ProjectDream, CoordinatorPlan, KairosLog } from '../services/analysisService';
 import { ProjectPet } from './ProjectPet';
 import { TerminalPet } from './TerminalPet';
@@ -19,9 +23,17 @@ interface ProjectAnalystProps {
   settings: AppSettings['analysis'];
   allProviders: AppSettings['providers'];
   onUpdateSettings: (settings: AppSettings['analysis']) => void;
+  isEmbedded?: boolean;
 }
 
-export function ProjectAnalyst({ isOpen, onClose, settings, allProviders, onUpdateSettings }: ProjectAnalystProps) {
+export function ProjectAnalyst({ 
+  isOpen, 
+  onClose, 
+  settings, 
+  allProviders, 
+  onUpdateSettings,
+  isEmbedded 
+}: ProjectAnalystProps) {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'insights' | 'graph' | 'roadmap' | 'docs' | 'landing' | 'lab' | 'coordinator' | 'kairos'>('insights');
@@ -50,6 +62,19 @@ export function ProjectAnalyst({ isOpen, onClose, settings, allProviders, onUpda
   const [ultraplanResult, setUltraplanResult] = useState<string | null>(null);
   const [isUltraplanning, setIsUltraplanning] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
+  
+  // Interactive Canvas States (Claude Design Style)
+  const [activeTool, setActiveTool] = useState<'inspect' | 'comment' | 'edit' | 'draw' | 'tweaks' | null>(null);
+  const [isTweaksPanelOpen, setIsTweaksPanelOpen] = useState(false);
+  const [canvasTweaks, setCanvasTweaks] = useState({
+    primaryColor: '#D97757',
+    borderRadius: 12,
+    fontSize: 14,
+    spacing: 16
+  });
+  const [annotations, setAnnotations] = useState<any[]>([]);
+  const [isHandoverMode, setIsHandoverMode] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // --- Handlers for New Features ---
   const handleCoordinator = async (goal: string) => {
@@ -242,192 +267,177 @@ AI 建议：${insight.suggestion}
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className={cn(
+          isEmbedded ? "relative w-full h-full flex flex-col" : "fixed inset-0 z-[100] flex items-center justify-center p-4"
+        )}>
+          {!isEmbedded && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={onClose}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            />
+          )}
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-          />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            initial={isEmbedded ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+            exit={isEmbedded ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 20 }}
+            className={cn(
+              "relative bg-bg-canvas flex flex-col overflow-hidden",
+              isEmbedded ? "w-full h-full" : "w-full max-w-2xl rounded-3xl shadow-2xl max-h-[80vh]"
+            )}
           >
             {/* Header */}
-            <div className="px-8 pt-6 border-b border-border-theme flex flex-col bg-zinc-50/50">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-accent-theme/10 rounded-2xl">
-                    <Sparkles className="w-6 h-6 text-accent-theme" />
+            <div className={cn(
+              "px-6 pt-4 border-b border-border-theme flex flex-col transition-all",
+              isEmbedded ? "bg-bg-canvas" : "bg-zinc-50/50"
+            )}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-accent-theme/5 rounded-lg border border-accent-theme/10">
+                    <Sparkles className="w-4 h-4 text-accent-theme" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-text-primary tracking-tight">项目全生命周期 AI 增强</h2>
-                    <p className="text-xs text-text-secondary font-medium">自动扫描分析 · 最新趋势感知 · 落地部署辅助</p>
+                    <h2 className="text-sm font-bold text-text-primary tracking-tight uppercase">设计与分析</h2>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={toggleDreamMode}
-                    className={cn(
-                      "p-2 rounded-full transition-all flex items-center gap-2",
-                      isDreamMode ? "bg-indigo-600 text-white shadow-lg" : "hover:bg-zinc-200 text-text-secondary"
-                    )}
-                    title={isDreamMode ? "回顾现实" : "进入开发者梦境模式"}
-                  >
-                    <Moon className={cn("w-5 h-5", isDreamMode && "animate-pulse")} />
-                    {isDreamMode && <span className="text-[10px] font-black mr-1">DREAMING</span>}
-                  </button>
-                  <button 
-                    onClick={toggleVoiceMode}
-                    className={cn(
-                      "p-2 rounded-full transition-all",
-                      isVoiceActive ? "bg-emerald-500 text-white shadow-lg animate-pulse" : "hover:bg-zinc-200 text-text-secondary"
-                    )}
-                    title="Voice Mode (BETA)"
-                  >
-                    <Mic className="w-5 h-5" />
-                  </button>
-                  <button 
-                    onClick={() => setCopiedMsg("Bridge Mode Link: https://ais-bridge.io/" + Math.random().toString(36).substring(7))}
-                    className="p-2 hover:bg-zinc-200 rounded-full transition-colors text-text-secondary"
-                    title="Bridge Mode (Remote Control)"
-                  >
-                    <Share2 className="w-5 h-5" />
-                  </button>
+                <div className="flex items-center gap-1">
+                  {/* Design Tools (Claude Style) */}
+                  <div className="flex items-center gap-0.5 bg-zinc-100/80 p-0.5 rounded-lg mr-2 border border-border-theme/50">
+                    {[
+                      { id: 'inspect', icon: MousePointer2, label: '检查' },
+                      { id: 'comment', icon: MessageSquare, label: '评论' },
+                      { id: 'edit', icon: Type, label: '直接编辑' },
+                      { id: 'draw', icon: PenTool, label: '手绘标注' },
+                      { id: 'tweaks', icon: Sliders, label: '调节' },
+                    ].map((tool) => (
+                      <button
+                        key={tool.id}
+                        onClick={() => {
+                          setActiveTool(activeTool === tool.id ? null : tool.id as any);
+                          if (tool.id === 'tweaks') setIsTweaksPanelOpen(!isTweaksPanelOpen);
+                        }}
+                        className={cn(
+                          "p-1.5 rounded-md transition-all",
+                          activeTool === tool.id 
+                            ? "bg-white text-accent-theme shadow-sm" 
+                            : "text-zinc-400 hover:text-text-primary hover:bg-white/50"
+                        )}
+                        title={tool.label}
+                      >
+                        <tool.icon className="w-3.5 h-3.5" />
+                      </button>
+                    ))}
+                  </div>
+
                   <button 
                     onClick={() => fetchInsights()}
                     disabled={isLoading}
-                    className="p-2 hover:bg-zinc-200 rounded-full transition-colors text-text-secondary disabled:opacity-50"
+                    className="p-1.5 hover:bg-zinc-200 rounded-lg text-text-secondary disabled:opacity-50"
                     title="重新扫描项目"
                   >
-                    <RefreshCw className={cn("w-5 h-5", isLoading && "animate-spin")} />
+                    <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
                   </button>
                   <button 
-                    onClick={onClose}
-                    className="p-2 hover:bg-zinc-200 rounded-full transition-colors text-text-secondary"
+                    onClick={toggleDreamMode}
+                    className={cn(
+                      "p-1.5 rounded-lg transition-all",
+                      isDreamMode ? "bg-indigo-600 text-white" : "hover:bg-zinc-200 text-text-secondary"
+                    )}
+                    title="梦想模式"
                   >
-                    <X className="w-5 h-5" />
+                    <Moon className="w-4 h-4" />
                   </button>
+                  <div className="w-px h-4 bg-border-theme mx-1" />
+                  {!isEmbedded && (
+                    <button 
+                      onClick={onClose}
+                      className="p-1.5 hover:bg-zinc-200 rounded-lg text-text-secondary"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
-              
-              {/* Tabs */}
-              <div className="flex items-center justify-between border-b border-border-theme pr-4">
-                <div className="flex gap-6">
-                  <button
-                    onClick={() => setActiveTab('insights')}
-                    className={cn(
-                      "pb-3 text-sm font-bold transition-all border-b-2",
-                      activeTab === 'insights' ? "border-accent-theme text-accent-theme" : "border-transparent text-text-secondary hover:text-text-primary"
-                    )}
-                  >
-                    智能优选意见
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('graph')}
-                    className={cn(
-                      "pb-3 text-sm font-bold transition-all border-b-2",
-                      activeTab === 'graph' ? "border-accent-theme text-accent-theme" : "border-transparent text-text-secondary hover:text-text-primary"
-                    )}
-                  >
-                    架构图谱
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('roadmap')}
-                    className={cn(
-                      "pb-3 text-sm font-bold transition-all border-b-2",
-                      activeTab === 'roadmap' ? "border-accent-theme text-accent-theme" : "border-transparent text-text-secondary hover:text-text-primary"
-                    )}
-                  >
-                    技术路线图
-                  </button>
-                  <button
-                    onClick={() => {
-                      setActiveTab('docs');
-                      if (!docs) handleGenerateDocs();
-                    }}
-                    className={cn(
-                      "pb-3 text-sm font-bold transition-all border-b-2",
-                      activeTab === 'docs' ? "border-accent-theme text-accent-theme" : "border-transparent text-text-secondary hover:text-text-primary"
-                    )}
-                  >
-                    文档助手
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('coordinator')}
-                    className={cn(
-                      "pb-3 text-sm font-bold transition-all border-b-2",
-                      activeTab === 'coordinator' ? "border-indigo-500 text-indigo-500" : "border-transparent text-text-secondary hover:text-text-primary"
-                    )}
-                  >
-                    协调模式 (Coordinator)
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('kairos')}
-                    className={cn(
-                      "pb-3 text-sm font-bold transition-all border-b-2",
-                      activeTab === 'kairos' ? "border-amber-500 text-amber-500" : "border-transparent text-text-secondary hover:text-text-primary"
-                    )}
-                  >
-                    KAIROS 巡逻
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('landing')}
-                    className={cn(
-                      "pb-3 text-sm font-bold transition-all border-b-2",
-                      activeTab === 'landing' ? "border-accent-theme text-accent-theme" : "border-transparent text-text-secondary hover:text-text-primary"
-                    )}
-                  >
-                    部署落地实验室 (Beta)
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('lab')}
-                    className={cn(
-                      "pb-3 text-sm font-bold transition-all border-b-2",
-                      activeTab === 'lab' ? "border-[#33ff33] text-[#33ff33]" : "border-transparent text-text-secondary hover:text-text-primary"
-                    )}
-                  >
-                    代码魂印 (Lab)
-                  </button>
+
+              {/* Tabs & Provider Selector */}
+              <div className="flex items-center justify-between border-b border-zinc-100 -mx-6 px-6">
+                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                  {(['insights', 'graph', 'roadmap', 'docs', 'coordinator', 'kairos', 'lab'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => {
+                         setActiveTab(tab);
+                         if (tab === 'docs' && !docs) handleGenerateDocs();
+                      }}
+                      className={cn(
+                        "px-3 py-2 text-[11px] font-bold transition-all border-b-2 whitespace-nowrap",
+                        activeTab === tab 
+                          ? "border-accent-theme text-text-primary" 
+                          : "border-transparent text-text-secondary hover:text-text-primary"
+                      )}
+                    >
+                      {tab === 'insights' ? '建议' : 
+                       tab === 'graph' ? '图谱' :
+                       tab === 'roadmap' ? '路线' :
+                       tab === 'docs' ? '文档' :
+                       tab === 'coordinator' ? '协调' :
+                       tab === 'kairos' ? '巡逻' : '实验'}
+                    </button>
+                  ))}
                 </div>
-                
-                {/* Provider Selector */}
-                <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-xl mb-2">
+
+                <div className="flex items-center gap-3 mb-1">
                   <button
-                    onClick={() => {
-                      onUpdateSettings({ ...settings, provider: 'gemini' });
-                      fetchInsights('gemini');
-                    }}
-                    className={cn(
-                      "px-3 py-1 text-[10px] font-bold rounded-lg transition-all",
-                      settings.provider === 'gemini' ? "bg-white text-accent-theme shadow-sm" : "text-text-secondary hover:text-text-primary"
-                    )}
+                    onClick={() => setIsHandoverMode(true)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-accent-theme text-white rounded-lg text-[10px] font-bold shadow-lg shadow-accent-theme/20 hover:scale-105 active:scale-95 transition-all"
                   >
-                    Gemini (Search)
+                    <Rocket className="w-3 h-3" />
+                    交付 CODE
                   </button>
-                  <button
-                    onClick={() => {
-                      onUpdateSettings({ ...settings, provider: 'openai' });
-                      fetchInsights('openai');
-                    }}
-                    className={cn(
-                      "px-3 py-1 text-[10px] font-bold rounded-lg transition-all",
-                      settings.provider === 'openai' ? "bg-white text-zinc-800 shadow-sm" : "text-text-secondary hover:text-text-primary"
-                    )}
-                  >
-                    GPT-4o
-                  </button>
+                  <div className="flex items-center gap-1 bg-zinc-100/50 p-0.5 rounded-lg">
+                  {(['gemini', 'openai'] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        onUpdateSettings({ ...settings, provider: p });
+                        fetchInsights(p);
+                      }}
+                      className={cn(
+                        "px-2 py-1 text-[9px] font-bold rounded-md transition-all",
+                        settings.provider === p ? "bg-white text-text-primary shadow-sm" : "text-text-secondary"
+                      )}
+                    >
+                      {p.toUpperCase()}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-8 relative">
-              <AnimatePresence>
-                {isDreamMode && (
+            {/* Content Area with Interactive Layers */}
+            <div className="flex-1 flex overflow-hidden relative">
+              <div className="flex-1 overflow-y-auto p-8 relative scrollbar-none">
+                {/* Hand-drawn Overlay (Mocking the logic) */}
+                {activeTool === 'draw' && (
+                  <div className="absolute inset-0 z-50 cursor-crosshair overflow-hidden pointer-events-auto bg-accent-theme/[0.02]">
+                    <svg className="w-full h-full">
+                      {/* Simple illustration of hand-drawn marks */}
+                      <path d="M100 100 Q 150 50 200 100 T 300 100" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-theme/40" />
+                      <circle cx="400" cy="200" r="40" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="4 4" className="text-indigo-400/50" />
+                    </svg>
+                  </div>
+                )}
+
+                {/* Inline Comment Mode Indicators */}
+                {activeTool === 'comment' && (
+                  <div className="absolute inset-0 z-40 bg-zinc-900/[0.02] cursor-help" />
+                )}
+
+                <AnimatePresence>
+                  {isDreamMode && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -1102,6 +1112,163 @@ AI 建议：${insight.suggestion}
             </>
           )}
         </div>
+
+          {/* Handover Dialog / Overlay */}
+          <AnimatePresence>
+            {isHandoverMode && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="absolute inset-x-0 bottom-0 top-0 z-[100] bg-white/95 backdrop-blur-md flex flex-col items-center justify-center p-12 text-center"
+              >
+                <div className="w-16 h-16 bg-accent-theme/10 rounded-3xl flex items-center justify-center mb-6">
+                  <Package className="w-8 h-8 text-accent-theme" />
+                </div>
+                <h3 className="text-xl font-bold text-text-primary mb-2">生成技术交接包</h3>
+                <p className="text-sm text-text-secondary max-w-sm mb-8">
+                  正在根据您的设计意图、品牌规范和选定的架构，打包一份完整的技术交接文件，可一键导入 Claude Code 进入开发环节。
+                </p>
+                <div className="grid grid-cols-2 gap-4 w-full max-w-md mb-8">
+                  <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100 flex flex-col items-start gap-2">
+                    <BrandIcon className="w-4 h-4 text-accent-theme" />
+                    <span className="text-xs font-bold">品牌系统同步</span>
+                    <div className="w-full h-1 bg-zinc-200 rounded-full overflow-hidden">
+                      <motion.div initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ duration: 1 }} className="h-full bg-accent-theme" />
+                    </div>
+                  </div>
+                  <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100 flex flex-col items-start gap-2">
+                    <FileCode className="w-4 h-4 text-indigo-500" />
+                    <span className="text-xs font-bold">组件规范提取</span>
+                    <div className="w-full h-1 bg-zinc-200 rounded-full overflow-hidden">
+                      <motion.div initial={{ width: 0 }} animate={{ width: '85%' }} transition={{ duration: 1.5 }} className="h-full bg-indigo-500" />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <button 
+                    onClick={() => setIsHandoverMode(false)}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold text-text-secondary hover:bg-zinc-100 transition-all"
+                  >
+                    返回修改
+                  </button>
+                  <button 
+                    onClick={() => {
+                      alert('交接包已准备就绪，正在启动 Claude Code...');
+                      setIsHandoverMode(false);
+                    }}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold bg-text-primary text-white hover:opacity-90 transition-all shadow-xl"
+                  >
+                    立即交付实现
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Side Tweaks / Brand Panel */}
+        <AnimatePresence>
+          {isTweaksPanelOpen && (
+            <motion.div
+              initial={{ x: 300, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 300, opacity: 0 }}
+              className="w-72 border-l border-border-theme bg-zinc-50/50 flex flex-col pt-4 overflow-hidden"
+            >
+              <div className="px-5 mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-accent-theme" />
+                    <h4 className="text-[11px] font-bold text-text-primary uppercase tracking-widest">实时调节 (Knobs)</h4>
+                  </div>
+                  <button onClick={() => setIsTweaksPanelOpen(false)} className="p-1 hover:bg-zinc-200 rounded">
+                    <X className="w-3 h-3 text-text-secondary" />
+                  </button>
+                </div>
+                <p className="text-[10px] text-text-secondary font-medium">AI 自动生成参数滑块</p>
+              </div>
+
+              <div className="px-5 space-y-6 flex-1 overflow-y-auto pb-10">
+                {/* Brand System Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">
+                    <BrandIcon className="w-3 h-3" />
+                    品牌系统感知
+                  </div>
+                  <div className="p-3 bg-white rounded-xl border border-border-theme shadow-sm">
+                    <div className="text-[10px] font-bold text-text-secondary mb-3">自动读取代码库规范</div>
+                    <div className="flex flex-wrap gap-2">
+                      {['#D97757', '#F9F9F8', '#1A1A18', '#6B6B67'].map(c => (
+                        <div key={c} className="w-6 h-6 rounded-full border border-border-theme" style={{ backgroundColor: c }} title={c} />
+                      ))}
+                    </div>
+                    <div className="mt-3 text-[10px] text-zinc-400 leading-tight">
+                      已自动应用 Inter 字体及 1.5x 视觉层级。
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tweaks Sliders */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">
+                    <Activity className="w-3 h-3" />
+                    视觉微调
+                  </div>
+                  
+                  <div className="space-y-5">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[11px] font-bold text-text-secondary">
+                        <span>主色调</span>
+                        <span>{canvasTweaks.primaryColor}</span>
+                      </div>
+                      <input 
+                        type="color" 
+                        value={canvasTweaks.primaryColor}
+                        onChange={(e) => setCanvasTweaks({...canvasTweaks, primaryColor: e.target.value})}
+                        className="w-full h-8 cursor-pointer bg-white p-1 rounded-lg border border-border-theme"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[11px] font-bold text-text-secondary">
+                        <span>圆角弧度</span>
+                        <span>{canvasTweaks.borderRadius}px</span>
+                      </div>
+                      <input 
+                        type="range" min="0" max="32"
+                        value={canvasTweaks.borderRadius}
+                        onChange={(e) => setCanvasTweaks({...canvasTweaks, borderRadius: parseInt(e.target.value)})}
+                        className="w-full accent-accent-theme"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[11px] font-bold text-text-secondary">
+                        <span>排版字号</span>
+                        <span>{canvasTweaks.fontSize}px</span>
+                      </div>
+                      <input 
+                        type="range" min="10" max="24"
+                        value={canvasTweaks.fontSize}
+                        onChange={(e) => setCanvasTweaks({...canvasTweaks, fontSize: parseInt(e.target.value)})}
+                        className="w-full accent-accent-theme"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-6">
+                  <button className="w-full py-2 bg-text-primary text-white text-[11px] font-bold rounded-xl hover:opacity-90 transition-opacity">
+                    应用到所有组件
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
             {/* Footer */}

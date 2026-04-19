@@ -5,6 +5,7 @@ import {SettingsModal} from './components/SettingsModal';
 import {Sidebar} from './components/Sidebar';
 import {ProjectAnalyst} from './components/ProjectAnalyst';
 import type {AppSettings, Chat} from './types';
+import {cn} from './lib/utils';
 import {loadPersistedState, savePersistedState} from './lib/desktop';
 import {
   fetchLocalToolConfig,
@@ -18,7 +19,7 @@ export default function App() {
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isAnalystOpen, setIsAnalystOpen] = useState(false);
+  const [isDesignPanelOpen, setIsDesignPanelOpen] = useState(true);
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
   const [hasLoadedPersistedState, setHasLoadedPersistedState] = useState(false);
 
@@ -157,25 +158,52 @@ export default function App() {
               onDeleteChat={handleDeleteChat}
               isTyping={isTyping}
               onOpenSettings={() => setIsSettingsOpen(true)}
-              onOpenAnalyst={() => setIsAnalystOpen(true)}
+              onOpenAnalyst={() => setIsDesignPanelOpen(true)}
             />
           </motion.div>
         )}
       </AnimatePresence>
-      <main className="flex-1 h-full overflow-hidden relative">
-        <ChatInterface
-          chat={activeChat}
-          onUpdateChat={handleUpdateChat}
-          onNewChat={handleNewChat}
-          chats={chats}
-          onSelectChat={setActiveChatId}
-          isSidebarVisible={isSidebarVisible}
-          onToggleSidebar={() => setIsSidebarVisible(!isSidebarVisible)}
-          onIsTypingChange={setIsTyping}
-          settings={settings}
-          onUpdateSettings={(next) => setSettings(normalizeSettings(next))}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-        />
+      <main className="flex-1 h-full flex overflow-hidden relative">
+        <div className={cn("flex-1 h-full min-w-0 transition-all duration-300", isDesignPanelOpen ? "w-1/2" : "w-full")}>
+          <ChatInterface
+            chat={activeChat}
+            onUpdateChat={handleUpdateChat}
+            onNewChat={handleNewChat}
+            chats={chats}
+            onSelectChat={setActiveChatId}
+            isSidebarVisible={isSidebarVisible}
+            onToggleSidebar={() => setIsSidebarVisible(!isSidebarVisible)}
+            onIsTypingChange={setIsTyping}
+            settings={settings}
+            onUpdateSettings={(next) => setSettings(normalizeSettings(next))}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            isDesignPanelOpen={isDesignPanelOpen}
+            onToggleDesignPanel={() => setIsDesignPanelOpen(!isDesignPanelOpen)}
+          />
+        </div>
+
+        <AnimatePresence mode="wait">
+          {isDesignPanelOpen && (
+            <motion.div
+              initial={{ x: '100%', opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 200 }}
+              className="w-1/2 border-l border-border-theme h-full overflow-hidden bg-bg-canvas flex flex-col shadow-[-4px_0_24px_rgba(0,0,0,0.02)]"
+            >
+              <ProjectAnalyst 
+                isOpen={true} 
+                isEmbedded={true}
+                onClose={() => setIsDesignPanelOpen(false)}
+                settings={settings.analysis}
+                allProviders={settings.providers}
+                onUpdateSettings={(analysisSettings) => {
+                  setSettings(prev => ({ ...prev, analysis: analysisSettings }));
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       <SettingsModal
@@ -185,16 +213,6 @@ export default function App() {
         onSave={(newSettings) => {
           setSettings(normalizeSettings(newSettings));
           setIsSettingsOpen(false);
-        }}
-      />
-
-      <ProjectAnalyst 
-        isOpen={isAnalystOpen}
-        onClose={() => setIsAnalystOpen(false)}
-        settings={settings.analysis}
-        allProviders={settings.providers}
-        onUpdateSettings={(analysisSettings) => {
-          setSettings(prev => ({ ...prev, analysis: analysisSettings }));
         }}
       />
     </div>

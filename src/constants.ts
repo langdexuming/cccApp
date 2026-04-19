@@ -33,6 +33,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
       baseUrl: '',
       enabled: true,
       models: ['default']
+    },
+    vertex_ai: {
+      id: 'vertex_ai',
+      name: 'Vertex AI',
+      apiKey: '',
+      projectId: '',
+      baseUrl: 'us-central1',
+      enabled: true,
+      models: ['gemini-1.5-pro', 'gemini-1.5-flash']
     }
   },
   collaboration: {

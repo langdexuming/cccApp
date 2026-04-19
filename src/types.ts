@@ -7,12 +7,13 @@ export interface Message {
   timestamp: number;
 }
 
-export type ProviderType = 'gemini' | 'claude' | 'openai' | 'custom';
+export type ProviderType = 'gemini' | 'claude' | 'openai' | 'custom' | 'vertex_ai';
 
 export interface ProviderConfig {
   id: ProviderType;
   name: string;
   apiKey: string;
+  projectId?: string;
   baseUrl?: string;
   enabled: boolean;
   models: string[];
@@ -58,7 +59,7 @@ export interface PersistedAppState {
 
 export type ProjectPhase = 'planning' | 'design' | 'development' | 'testing' | 'deployment' | 'maintenance';
 
-export type AnalysisProvider = 'gemini' | 'openai';
+export type AnalysisProvider = 'gemini' | 'openai' | 'vertex-ai';
 
 export interface ProjectInsight {
   id: string;

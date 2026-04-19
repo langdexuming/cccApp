@@ -277,8 +277,33 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                 <div className="space-y-6">
                   <div className="flex items-center justify-between"><h3 className="text-sm font-bold uppercase tracking-wider text-text-primary">{currentProviderConfig.name} 配置</h3><button onClick={() => updateProvider(currentProvider, {enabled: !currentProviderConfig.enabled})} className={cn('rounded-full px-3 py-1 text-xs font-bold', currentProviderConfig.enabled ? 'bg-accent-theme text-white' : 'bg-zinc-200 text-zinc-600')}>{currentProviderConfig.enabled ? '已启用' : '已关闭'}</button></div>
                   <div className="space-y-4 rounded-2xl border border-border-theme bg-zinc-50 p-4">
-                    <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">API Key</label><input type="password" value={currentProviderConfig.apiKey} onChange={(e) => updateProvider(currentProvider, {apiKey: e.target.value})} placeholder={`输入 ${currentProviderConfig.name} 的 API Key`} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
-                    <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">Base URL</label><input type="text" value={currentProviderConfig.baseUrl || ''} onChange={(e) => updateProvider(currentProvider, {baseUrl: e.target.value})} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
+                    <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">API Key / OAuth Token</label><input type="password" value={currentProviderConfig.apiKey} onChange={(e) => updateProvider(currentProvider, {apiKey: e.target.value})} placeholder={`输入 ${currentProviderConfig.name} 的 API Key`} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
+                    {currentProvider === 'vertex_ai' ? (
+                      <>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-text-secondary">GCP Project ID</label>
+                          <input 
+                            type="text" 
+                            value={currentProviderConfig.projectId || ''} 
+                            onChange={(e) => updateProvider(currentProvider, {projectId: e.target.value})} 
+                            placeholder="your-project-id"
+                            className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" 
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-text-secondary">GCP Location (e.g. us-central1)</label>
+                          <input 
+                            type="text" 
+                            value={currentProviderConfig.baseUrl || ''} 
+                            onChange={(e) => updateProvider(currentProvider, {baseUrl: e.target.value})} 
+                            placeholder="us-central1"
+                            className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" 
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">Base URL</label><input type="text" value={currentProviderConfig.baseUrl || ''} onChange={(e) => updateProvider(currentProvider, {baseUrl: e.target.value})} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
+                    )}
                     {(currentProvider === 'claude' || currentProvider === 'openai' || currentProvider === 'custom') ? <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">接口协议</label><select value={currentProviderConfig.wireApi || (currentProvider === 'claude' ? 'messages' : 'chat_completions')} onChange={(e) => updateProvider(currentProvider, {wireApi: e.target.value as ProviderConfig['wireApi']})} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm">{currentProvider === 'claude' ? <><option value="messages">messages</option><option value="chat_completions">chat/completions</option></> : <><option value="chat_completions">chat/completions</option><option value="responses">responses</option></>}</select></div> : null}
                     <div className="flex gap-2"><input type="text" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addModel()} placeholder="输入模型 ID，例如 gpt-5.4" className="flex-1 rounded-xl border border-border-theme bg-white px-4 py-2 text-sm" /><button onClick={() => addModel()} className="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold"><Plus className="h-4 w-4" /></button></div>
                     {currentProvider === 'claude' ? <div className="space-y-2"><button type="button" disabled={remoteModelBusy} onClick={handleFetchRemoteModels} className="flex w-full items-center justify-center gap-2 rounded-xl border border-border-theme bg-white px-4 py-2.5 text-xs font-bold disabled:opacity-50"><RefreshCw className={cn('h-3.5 w-3.5', remoteModelBusy && 'animate-spin')} />{remoteModelBusy ? '正在拉取远程模型...' : '从当前 Claude 接口拉取远程模型'}</button>{remoteModelHint ? <p className="text-[10px] text-text-secondary">{remoteModelHint}</p> : null}</div> : null}

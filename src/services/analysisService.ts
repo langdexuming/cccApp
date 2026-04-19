@@ -60,6 +60,33 @@ export async function getProjectInsights(
 
     const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
 
+    if (providerType === 'vertex-ai') {
+      const response = await fetch('/api/vertex/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: config.projectId,
+          location: config.baseUrl || 'us-central1',
+          model: config.models[0] || "gemini-1.5-flash",
+          apiKey: config.apiKey,
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      if (!response.ok) throw new Error('Vertex AI request failed');
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      const parsed = JSON.parse(text || '{}');
+      return {
+        insights: parsed.insights || [],
+        radar: parsed.radar || defaultRadar,
+        context: { 
+          tree: context.tree, 
+          summary: parsed.summary || '已通过 Vertex AI 成功扫描项目。',
+          dependencies: (context as any).dependencies 
+        }
+      };
+    }
+
     if (providerType === 'gemini') {
       // @ts-ignore
       const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
@@ -177,6 +204,23 @@ export async function getInsightFix(
 
     const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
 
+    if (providerType === 'vertex-ai') {
+      const response = await fetch('/api/vertex/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: config.projectId,
+          location: config.baseUrl || 'us-central1',
+          model: config.models[0] || "gemini-1.5-flash",
+          apiKey: config.apiKey,
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      return text ? JSON.parse(text) : null;
+    }
+
     if (providerType === 'gemini') {
       // @ts-ignore
       const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
@@ -240,6 +284,22 @@ export async function generateProjectDocs(
 
     const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
 
+    if (providerType === 'vertex-ai') {
+      const response = await fetch('/api/vertex/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: config.projectId,
+          location: config.baseUrl || 'us-central1',
+          model: config.models[0] || "gemini-1.5-flash",
+          apiKey: config.apiKey,
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "未能生成文档。";
+    }
+
     if (providerType === 'gemini') {
       // @ts-ignore
       const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
@@ -299,6 +359,22 @@ export async function runPreflightChecks(
     `;
 
     const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
+
+    if (providerType === 'vertex-ai') {
+      const response = await fetch('/api/vertex/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: config.projectId,
+          location: config.baseUrl || 'us-central1',
+          model: config.models[0] || "gemini-1.5-flash",
+          apiKey: config.apiKey,
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      const data = await response.json();
+      return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
+    }
 
     if (providerType === 'gemini') {
       // @ts-ignore
@@ -378,6 +454,22 @@ export async function generateDeploymentConfig(
 
     const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
 
+    if (providerType === 'vertex-ai') {
+      const response = await fetch('/api/vertex/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: config.projectId,
+          location: config.baseUrl || 'us-central1',
+          model: config.models[0] || "gemini-1.5-flash",
+          apiKey: config.apiKey,
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      const data = await response.json();
+      return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
+    }
+
     if (providerType === 'gemini') {
       // @ts-ignore
       const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
@@ -454,6 +546,22 @@ export async function getProjectRoadmap(
     `;
 
     const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
+
+    if (providerType === 'vertex-ai') {
+      const response = await fetch('/api/vertex/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: config.projectId,
+          location: config.baseUrl || 'us-central1',
+          model: config.models[0] || "gemini-1.5-flash",
+          apiKey: config.apiKey,
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      const data = await response.json();
+      return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
+    }
 
     if (providerType === 'gemini') {
       // @ts-ignore
@@ -547,6 +655,22 @@ export async function getProjectDreams(
     `;
 
     const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
+
+    if (providerType === 'vertex-ai') {
+      const response = await fetch('/api/vertex/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: config.projectId,
+          location: config.baseUrl || 'us-central1',
+          model: config.models[0] || "gemini-1.5-flash",
+          apiKey: config.apiKey,
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      const data = await response.json();
+      return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
+    }
 
     if (providerType === 'gemini') {
       // @ts-ignore

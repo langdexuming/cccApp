@@ -5,6 +5,13 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 
+// Mock authentication for Vertex AI (In real app, use gcp-auth or GOOGLE_APPLICATION_CREDENTIALS)
+// Here we simulate the token retrieval for demo purposes as requested in the pattern.
+async function getGCPToken() {
+  // In a real environment, this would use the service account credentials.
+  return process.env.GCP_ACCESS_TOKEN || "MOCK_TOKEN";
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -206,6 +213,37 @@ async function startServer() {
   // KAIROS API: Fetch background logs
   app.get('/api/kairos/logs', (req: any, res: any) => {
     res.json(getMemory());
+  });
+
+  // Vertex AI Proxy
+  app.post('/api/vertex/generate', async (req: any, res: any) => {
+    try {
+      const { projectId, location, model, contents, apiKey } = req.body;
+      
+      if (!projectId || !location || !model) {
+        return res.status(400).json({ error: 'Missing Vertex AI configuration' });
+      }
+
+      // We use the provided apiKey as a fallback if process.env.GCP_ACCESS_TOKEN is missing
+      // However, for the provided snippet "Bearer auth(token)", we need an actual token.
+      const token = process.env.GCP_ACCESS_TOKEN || apiKey;
+
+      const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ contents }),
+      });
+
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Vertex AI request failed' });
+    }
   });
 
   // Vite middleware for development

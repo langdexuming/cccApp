@@ -67,6 +67,8 @@ const INITIAL_PET: PetState = {
   history: ['[SYSTEM] 初次实例化完成。'],
 };
 
+export type ActionType = 'debug' | 'refactor' | 'overclock' | 'test' | 'sleep' | 'analyze' | 'help';
+
 export function usePetGame() {
   const [pet, setPet] = useState<PetState>(() => {
     const saved = localStorage.getItem('project_analyst_pet');
@@ -84,9 +86,9 @@ export function usePetGame() {
     }));
   };
 
-  const action = (type: 'debug' | 'refactor' | 'overclock' | 'test' | 'sleep') => {
-    if (pet.fatigue >= 100 && type !== 'sleep') {
-      addLog('[ERROR] 疲劳值过高，宠物需要休息。');
+  const action = (type: ActionType) => {
+    if (pet.fatigue >= 100 && type !== 'sleep' && type !== 'help') {
+      addLog('[ERROR] 疲劳值过高，使魔无法执行深度分析。');
       return;
     }
 
@@ -95,7 +97,26 @@ export function usePetGame() {
       let xpGain = 10;
       let fatigueGain = 20;
 
+      const randomAnalysis = [
+        "使魔观察到：项目并发逻辑存在隐性死锁风险，建议进行隔离测试。",
+        "使魔探测到：该模块的圈复杂度正处于临界值，重构势在必行。",
+        "使魔建议：引入 Redis 缓存层可提升 40% 的热点数据读取速度。",
+        "使魔语灵：防御力不足，建议针对 SQL 注入风险完善预编译语句。",
+        "使魔通过推演发现：当前的 UI 交互路径过于繁琐，建议扁平化处理。",
+        "使魔报告：检测到多处未释放的闭包句柄，存在内存泄漏隐患。"
+      ];
+
       switch (type) {
+        case 'analyze':
+          const analysis = randomAnalysis[Math.floor(Math.random() * randomAnalysis.length)];
+          addLog(`[ANALYSIS] ${analysis}`);
+          next.attributes.logic += 3;
+          xpGain = 15;
+          fatigueGain = 15;
+          break;
+        case 'help':
+          addLog(`[HELP] 可用指令: /analyze (使魔深度分析), /buddy (互动), debug (属性加成), ls (召唤)`);
+          return prev;
         case 'debug':
           next.attributes.logic += 2;
           addLog(`[ACTION] 进行 DEBUG... Logic +2`);
@@ -131,9 +152,9 @@ export function usePetGame() {
         // Evolve chance?
         if (next.level % 5 === 0) {
           const currentIdx = SPECIES.findIndex(s => s.id === next.speciesId);
-          if (currentIdx < SPECIES.length - 2) {
+          if (currentIdx !== -1 && currentIdx < SPECIES.length - 1) {
             next.speciesId = SPECIES[currentIdx + 1].id;
-            addLog(`[EVOLVE] 进化！你的使魔变态为 ${SPECIES[currentIdx+1].name}`);
+            addLog(`[EVOLVE] 属性共鸣！使魔进阶为: ${SPECIES[currentIdx+1].name}`);
           }
         }
       }

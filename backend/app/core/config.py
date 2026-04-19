@@ -158,18 +158,26 @@ def _build_settings() -> Settings:
     ollama_section = merged.get("ollama", {})
     paths_section = merged.get("paths", {})
 
+    sqlite_root = Path(paths_section.get("sqlite_root", REPO_ROOT / "runtime" / "sqlite"))
+    default_sqlite_url = f"sqlite:///{(sqlite_root / 'app.db').resolve().as_posix()}"
+    configured_db_url = db_section.get("url")
+    if configured_db_url is None or str(configured_db_url).strip() == "":
+        database_url = default_sqlite_url
+    else:
+        database_url = str(configured_db_url).strip()
+
     settings = Settings(
         app_name=app_section.get("name", "ai-trains"),
         env=app_section.get("env", "dev"),
         host=app_section.get("host", "127.0.0.1"),
         port=app_section.get("port", 18080),
         log_level=app_section.get("log_level", "INFO"),
-        database_url=db_section.get("url", "sqlite:///E:/ai/ai_trains/runtime/sqlite/app.db"),
+        database_url=database_url,
         project_root=Path(paths_section.get("project_root", REPO_ROOT)),
         env_root=Path(paths_section.get("env_root", "E:/.env_trains")),
         wsl_root=Path(paths_section.get("wsl_root", "E:/wsl")),
         runtime_root=Path(paths_section.get("runtime_root", REPO_ROOT / "runtime")),
-        sqlite_root=Path(paths_section.get("sqlite_root", REPO_ROOT / "runtime" / "sqlite")),
+        sqlite_root=sqlite_root,
         datasets_root=Path(paths_section.get("datasets_root", REPO_ROOT / "runtime" / "datasets")),
         templates_root=Path(paths_section.get("templates_root", REPO_ROOT / "runtime" / "templates")),
         experiments_root=Path(paths_section.get("experiments_root", REPO_ROOT / "runtime" / "experiments")),

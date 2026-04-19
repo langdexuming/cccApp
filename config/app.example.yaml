@@ -6,7 +6,8 @@ app:
   log_level: INFO
 
 database:
-  url: sqlite:///E:/ai/ai_trains/runtime/sqlite/app.db
+  # 留空则使用仓库 runtime/sqlite/app.db（见 backend/app/core/config.py）
+  url: ""
 
 runtime:
   max_concurrent_train_runs: 1

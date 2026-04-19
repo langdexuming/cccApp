@@ -13,10 +13,11 @@ export interface ProviderConfig {
   id: ProviderType;
   name: string;
   apiKey: string;
+  authToken?: string;
   baseUrl?: string;
   enabled: boolean;
   models: string[];
-  wireApi?: 'messages' | 'chat_completions' | 'responses';
+  wireApi?: 'messages' | 'chat_completions' | 'responses' | 'cli';
 }
 
 export interface AgentConfig {

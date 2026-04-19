@@ -1,16 +1,7 @@
-import type {AppSettings, ProviderType} from '../types';
+import type {AppSettings} from '../types';
 import type {LocalToolConfigResponse} from '../../localToolConfig.types';
 import {readLocalToolConfig} from './desktop';
 import {normalizeSettings} from './providerCatalog';
-
-/**
- * 与 App.tsx 中 DEFAULT_SETTINGS 保持一致，用于判断 baseUrl 是否仍为内置默认
- */
-const BUILTIN_DEFAULT_BASE_URL: Partial<Record<ProviderType, string>> = {
-  gemini: 'https://generativelanguage.googleapis.com',
-  claude: 'https://api.anthropic.com',
-  openai: 'https://api.openai.com/v1',
-};
 
 /**
  * 请求 Vite 开发/预览服务器上的本机工具配置接口
@@ -39,10 +30,9 @@ export async function fetchLocalToolConfig(): Promise<LocalToolConfigResponse | 
 }
 
 /**
- * 将本机工具目录解析结果合并进应用设置（默认仅写入当前为空的字段）
- * @param prev 当前设置
- * @param data 服务端返回的本机配置
- * @returns 合并后的设置
+ * 将本机工具目录解析结果合并进应用设置。
+ * 本地实际读取到的 provider 配置应优先于应用之前缓存的旧值，
+ * 这样用户修改 ~/.claude / ~/.codex / ~/.gemini 后，桌面版重启即可生效。
  */
 export function mergeLocalToolConfigIntoSettings(
   prev: AppSettings,
@@ -62,14 +52,9 @@ export function mergeLocalToolConfigIntoSettings(
       continue;
     }
     const cur = next.providers[id];
-    const apiKey =
-      patch.apiKey && !cur.apiKey ? patch.apiKey : cur.apiKey;
-    const curBu = cur.baseUrl?.trim();
-    const builtIn = BUILTIN_DEFAULT_BASE_URL[id];
-    const baseUrlStillDefault =
-      !curBu || (builtIn !== undefined && curBu === builtIn);
-    const baseUrl =
-      patch.baseUrl && baseUrlStillDefault ? patch.baseUrl : cur.baseUrl;
+    const apiKey = patch.apiKey?.trim() ? patch.apiKey : cur.apiKey;
+    const authToken = patch.authToken?.trim() ? patch.authToken : cur.authToken;
+    const baseUrl = patch.baseUrl?.trim() ? patch.baseUrl : cur.baseUrl;
     const mergedModels = patch.models?.length
       ? id === 'claude'
         ? [...patch.models]
@@ -78,6 +63,7 @@ export function mergeLocalToolConfigIntoSettings(
     next.providers[id] = {
       ...cur,
       apiKey,
+      authToken,
       baseUrl,
       models: mergedModels,
       wireApi: patch.wireApi ?? cur.wireApi,

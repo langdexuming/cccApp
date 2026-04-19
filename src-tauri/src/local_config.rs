@@ -121,8 +121,15 @@ fn pick_gemini_env_from_dotenv(
 
 fn pick_claude_env_from_settings(
   root: &Value,
-) -> (Option<String>, Option<String>, Option<String>, Vec<&'static str>) {
+) -> (
+  Option<String>,
+  Option<String>,
+  Option<String>,
+  Option<String>,
+  Vec<&'static str>,
+) {
   let mut api_key = None;
+  let mut auth_token = None;
   let mut base_url = None;
   let model = root
     .get("model")
@@ -139,8 +146,12 @@ fn pick_claude_env_from_settings(
       if let Some(value) = take_non_empty_string(block.get("ANTHROPIC_API_KEY")) {
         api_key = Some(value);
         keys.push("ANTHROPIC_API_KEY");
-      } else if let Some(value) = take_non_empty_string(block.get("ANTHROPIC_AUTH_TOKEN")) {
-        api_key = Some(value);
+      }
+    }
+
+    if auth_token.is_none() {
+      if let Some(value) = take_non_empty_string(block.get("ANTHROPIC_AUTH_TOKEN")) {
+        auth_token = Some(value);
         keys.push("ANTHROPIC_AUTH_TOKEN");
       }
     }
@@ -157,7 +168,40 @@ fn pick_claude_env_from_settings(
     keys.push("model");
   }
 
-  (api_key, base_url, model, keys)
+  (api_key, auth_token, base_url, model, keys)
+}
+
+fn pick_claude_env_from_process() -> (Option<String>, Option<String>, Option<String>, Vec<&'static str>) {
+  let mut keys = Vec::new();
+
+  let api_key = env::var("ANTHROPIC_API_KEY")
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty());
+
+  if env::var("ANTHROPIC_API_KEY").ok().is_some_and(|value| !value.trim().is_empty()) {
+    keys.push("ANTHROPIC_API_KEY");
+  }
+
+  let auth_token = env::var("ANTHROPIC_AUTH_TOKEN")
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty());
+
+  if env::var("ANTHROPIC_AUTH_TOKEN").ok().is_some_and(|value| !value.trim().is_empty()) {
+    keys.push("ANTHROPIC_AUTH_TOKEN");
+  }
+
+  let base_url = env::var("ANTHROPIC_BASE_URL")
+    .ok()
+    .map(|value| normalize_claude_base_url(&value))
+    .filter(|value| !value.trim().is_empty());
+
+  if env::var("ANTHROPIC_BASE_URL").ok().is_some_and(|value| !value.trim().is_empty()) {
+    keys.push("ANTHROPIC_BASE_URL");
+  }
+
+  (api_key, auth_token, base_url, keys)
 }
 
 fn parse_toml_section_name(line: &str) -> Option<String> {
@@ -291,6 +335,7 @@ fn merge_provider_patch(
   providers: &mut HashMap<String, LocalToolProviderPatch>,
   provider_id: &str,
   api_key: Option<String>,
+  auth_token: Option<String>,
   base_url: Option<String>,
   wire_api: Option<String>,
   models: Option<Vec<String>>,
@@ -298,6 +343,9 @@ fn merge_provider_patch(
   let entry = providers.entry(provider_id.to_string()).or_default();
   if api_key.is_some() {
     entry.api_key = api_key;
+  }
+  if auth_token.is_some() {
+    entry.auth_token = auth_token;
   }
   if base_url.is_some() {
     entry.base_url = base_url;
@@ -317,6 +365,10 @@ fn current_project_codex_config() -> Option<PathBuf> {
 
 #[tauri::command]
 pub fn read_local_tool_configs() -> LocalToolConfigResponse {
+  load_local_tool_configs()
+}
+
+pub fn load_local_tool_configs() -> LocalToolConfigResponse {
   let Some(home_dir) = dirs::home_dir() else {
     return LocalToolConfigResponse::error("failed to resolve user home directory");
   };
@@ -327,13 +379,40 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
     ..LocalToolConfigResponse::default()
   };
 
+  let (claude_env_api_key, claude_env_auth_token, claude_env_base_url, claude_env_keys) =
+    pick_claude_env_from_process();
+  if claude_env_api_key.is_some() || claude_env_auth_token.is_some() || claude_env_base_url.is_some() {
+    merge_provider_patch(
+      &mut response.providers,
+      "claude",
+      claude_env_api_key,
+      claude_env_auth_token,
+      claude_env_base_url,
+      None,
+      None,
+    );
+    push_source(
+      &mut response.sources,
+      Path::new("[process-env]"),
+      claude_env_keys,
+    );
+  }
+
   let gemini_env_path = home_dir.join(".gemini").join(".env");
   if gemini_env_path.exists() {
     let env_values = parse_env_file(&gemini_env_path);
     let (api_key, base_url, keys) = pick_gemini_env_from_dotenv(&env_values);
 
     if api_key.is_some() || base_url.is_some() {
-      merge_provider_patch(&mut response.providers, "gemini", api_key, base_url, None, None);
+      merge_provider_patch(
+        &mut response.providers,
+        "gemini",
+        api_key,
+        None,
+        base_url,
+        None,
+        None,
+      );
       push_source(&mut response.sources, &gemini_env_path, keys);
     }
   }
@@ -347,12 +426,13 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
     let Some(json) = read_json_file(&file_path) else {
       continue;
     };
-    let (api_key, base_url, model, keys) = pick_claude_env_from_settings(&json);
-    if api_key.is_some() || base_url.is_some() || model.is_some() {
+    let (api_key, auth_token, base_url, model, keys) = pick_claude_env_from_settings(&json);
+    if api_key.is_some() || auth_token.is_some() || base_url.is_some() || model.is_some() {
       merge_provider_patch(
         &mut response.providers,
         "claude",
         api_key,
+        auth_token,
         base_url,
         None,
         model.map(|item| vec![item]),
@@ -390,6 +470,7 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
           "openai",
           None,
           None,
+          None,
           Some(wire_api),
           None,
         );
@@ -408,6 +489,7 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
     merge_provider_patch(
       &mut response.providers,
       "openai",
+      None,
       None,
       Some(normalized),
       wire_api,
@@ -447,6 +529,7 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
       None,
       None,
       None,
+      None,
       Some(merged_codex_models),
     );
   }
@@ -455,12 +538,19 @@ pub fn read_local_tool_configs() -> LocalToolConfigResponse {
   if auth_path.exists() {
     if let Some(json) = read_json_file(&auth_path) {
       if let Some(api_key) = find_sk_like_key(&json, 0) {
-        merge_provider_patch(&mut response.providers, "openai", Some(api_key), None, None, None);
+        merge_provider_patch(
+          &mut response.providers,
+          "openai",
+          Some(api_key),
+          None,
+          None,
+          None,
+          None,
+        );
         push_source(&mut response.sources, &auth_path, vec!["api_key_pattern"]);
       }
     }
   }
-
   response
 }
 
@@ -508,9 +598,10 @@ mod tests {
       }
     });
 
-    let (api_key, base_url, _, keys) = pick_claude_env_from_settings(&data);
+    let (api_key, auth_token, base_url, _, keys) = pick_claude_env_from_settings(&data);
 
-    assert_eq!(api_key.as_deref(), Some("sk-test"));
+    assert_eq!(api_key, None);
+    assert_eq!(auth_token.as_deref(), Some("sk-test"));
     assert_eq!(base_url.as_deref(), Some("https://example.com"));
     assert_eq!(keys.contains(&"model"), false);
     assert!(keys.contains(&"ANTHROPIC_AUTH_TOKEN"));
@@ -526,7 +617,7 @@ mod tests {
       }
     });
 
-    let (_, _, model, keys) = pick_claude_env_from_settings(&data);
+    let (_, _, _, model, keys) = pick_claude_env_from_settings(&data);
 
     assert_eq!(model.as_deref(), None);
     assert!(!keys.contains(&"model"));

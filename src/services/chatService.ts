@@ -64,7 +64,7 @@ export async function* streamChat(
                 agentApiKey,
                 agent.model,
                 agentProvider.baseUrl,
-                agentProvider.wireApi,
+                agentProvider.wireApi === 'cli' ? 'messages' : agentProvider.wireApi,
               );
               break;
             case 'openai':
@@ -107,7 +107,7 @@ export async function* streamChat(
         apiKey,
         activeModel,
         provider.baseUrl,
-        provider.wireApi,
+        provider.wireApi === 'cli' ? 'messages' : provider.wireApi,
       );
       break;
     case 'openai':
@@ -201,6 +201,30 @@ function claudeUses1mContext(model: string) {
   return model.trim().endsWith('[1m]');
 }
 
+function claudeApiModel(model: string) {
+  return model.trim().replace(/\[(1|2)m\]/gi, '').trim();
+}
+
+function claudeSupportsInterleavedThinking(model: string) {
+  const normalized = claudeApiModel(model).toLowerCase();
+  return normalized.includes('claude-opus-4') || normalized.includes('claude-sonnet-4');
+}
+
+function claudeBetas(model: string) {
+  const normalized = claudeApiModel(model).toLowerCase();
+  const betas: string[] = [];
+  if (!normalized.includes('haiku')) {
+    betas.push('claude-code-20250219');
+  }
+  if (claudeUses1mContext(model)) {
+    betas.push('context-1m-2025-08-07');
+  }
+  if (claudeSupportsInterleavedThinking(model)) {
+    betas.push('interleaved-thinking-2025-05-14');
+  }
+  return betas;
+}
+
 function formatClaudeError(message: string) {
   const trimmed = message.trim();
   if (!trimmed) {
@@ -217,13 +241,14 @@ async function* streamClaude(
   wireApi?: 'messages' | 'chat_completions' | 'responses',
 ) {
   const systemMessage = messages.find(m => m.role === 'system');
-  const chatMessages = messages.filter(m => m.role !== 'system');
-  const uses1mContext = claudeUses1mContext(model);
+  const chatMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+  const apiModel = claudeApiModel(model);
+  const betas = claudeBetas(model);
   if (wireApi === 'chat_completions') {
     yield* streamOpenAICompatible(
       messages,
       apiKey,
-      model.trim(),
+      apiModel,
       claudeApiRoot(baseUrl),
       'chat_completions',
     );
@@ -235,17 +260,41 @@ async function* streamClaude(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
-      ...(uses1mContext ? { 'anthropic-beta': 'context-1m-2025-08-07' } : {}),
+      ...(betas.length ? { 'anthropic-beta': betas.join(',') } : {}),
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: model.trim(),
-      system: systemMessage?.content,
-      messages: chatMessages.map(m => ({ role: m.role, content: m.content })),
+      model: apiModel,
+      system: [
+        {
+          type: 'text',
+          text: 'x-anthropic-billing-header: cc_version=ccc_app; cc_entrypoint=desktop;',
+        },
+        {
+          type: 'text',
+          text: "You are Claude Code, Anthropic's official CLI for Claude.",
+        },
+        ...(systemMessage?.content ? [{type: 'text', text: systemMessage.content}] : []),
+      ],
+      messages: chatMessages.map(m => ({
+        role: m.role,
+        content: m.content,
+      })),
       max_tokens: 4096,
-      stream: true
+      stream: true,
+      thinking: {
+        type: 'disabled',
+      },
+      metadata: {
+        user_id: JSON.stringify({
+          device_id: 'desktop',
+          account_uuid: '',
+          session_id: 'desktop',
+        }),
+      },
     })
   });
 

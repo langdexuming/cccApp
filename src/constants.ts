@@ -8,7 +8,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
       name: 'Gemini',
       apiKey: '',
       enabled: true,
-      models: ['gemini-3-flash-preview', 'gemini-3-pro-preview']
+      models: [
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+        'gemini-3-flash-preview',
+        'gemini-3-pro-preview'
+      ]
     },
     claude: {
       id: 'claude',
@@ -43,7 +48,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
         name: '代码审查员',
         role: 'reviewer',
         provider: 'gemini',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-2.5-flash',
         systemPrompt: '你是代码审查专家，负责检查代码的质量、逻辑和潜在漏洞。',
         enabled: true
       },
@@ -52,7 +57,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
         name: '架构师',
         role: 'architect',
         provider: 'gemini',
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-2.5-pro',
         systemPrompt: '你是资深软件架构师，负责系统的整体设计和技术栈选型建议。',
         enabled: true
       }

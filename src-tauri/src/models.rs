@@ -75,6 +75,8 @@ pub struct ProviderConfig {
   pub name: String,
   #[serde(default)]
   pub api_key: String,
+  #[serde(default)]
+  pub auth_token: String,
   pub base_url: Option<String>,
   pub wire_api: Option<String>,
   #[serde(default = "default_true")]
@@ -94,6 +96,8 @@ pub struct Chat {
   pub model: Option<String>,
   pub provider: Option<String>,
   pub effort: Option<String>,
+  #[serde(default)]
+  pub workspace: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -165,6 +169,7 @@ pub struct LocalToolConfigSource {
 #[serde(rename_all = "camelCase")]
 pub struct LocalToolProviderPatch {
   pub api_key: Option<String>,
+  pub auth_token: Option<String>,
   pub base_url: Option<String>,
   pub wire_api: Option<String>,
   #[serde(default)]

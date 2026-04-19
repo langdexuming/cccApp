@@ -1,5 +1,6 @@
 mod app_state;
 mod chat;
+mod claude_cli;
 mod git;
 mod local_config;
 mod models;

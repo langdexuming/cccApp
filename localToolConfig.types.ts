@@ -10,9 +10,10 @@ export type LocalToolConfigSource = {
 
 export type LocalToolProviderPatch = {
   apiKey?: string;
+  authToken?: string;
   baseUrl?: string;
   models?: string[];
-  wireApi?: 'messages' | 'chat_completions' | 'responses';
+  wireApi?: 'messages' | 'chat_completions' | 'responses' | 'cli';
 };
 
 export type LocalToolConfigResponse = {

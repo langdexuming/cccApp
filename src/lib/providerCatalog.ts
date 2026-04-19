@@ -8,7 +8,7 @@ const DEFAULT_COLLABORATION: AppSettings['collaboration'] = {
       name: 'Code Reviewer',
       role: 'reviewer',
       provider: 'gemini',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash',
       systemPrompt: 'Review code quality, logic, and potential issues.',
       enabled: true,
     },
@@ -17,7 +17,7 @@ const DEFAULT_COLLABORATION: AppSettings['collaboration'] = {
       name: 'Architect',
       role: 'architect',
       provider: 'gemini',
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-2.5-pro',
       systemPrompt: 'Provide architecture and technical design guidance.',
       enabled: true,
     },
@@ -32,13 +32,13 @@ const DEFAULT_GIT: AppSettings['git'] = {
 
 export const BUILTIN_PROVIDER_MODELS: Record<ProviderType, string[]> = {
   gemini: [
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
     'gemini-3-flash-preview',
     'gemini-3-pro-preview',
-    'gemini-2.5-pro',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-pro',
-    'gemini-1.5-flash',
   ],
   claude: [],
   openai: [
@@ -113,7 +113,7 @@ function inferWireApi(
 ): ProviderConfig['wireApi'] | undefined {
   const normalizedBaseUrl = baseUrl?.trim().toLowerCase() ?? '';
   if (providerId === 'claude') {
-    if (wireApi === 'messages' || wireApi === 'chat_completions') {
+    if (wireApi === 'messages' || wireApi === 'chat_completions' || wireApi === 'cli') {
       return wireApi;
     }
     if (normalizedBaseUrl.includes('/chat/completions')) {

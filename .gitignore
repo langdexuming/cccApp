@@ -6,3 +6,31 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Rust / Cargo 生成
+src-tauri/target/
+**/target/
+.cargo-target/
+src-tauri/target-*/
+
+# 本地运行产生的数据与 SQLite 等
+runtime/
+
+# 本地缓存、工具链与杂项生成
+.local-msvc/
+.claude/
+artifacts/
+.turbo/
+.next/
+.cache/
+*.tsbuildinfo
+
+# Python 缓存（若后续再引入脚本）
+**/__pycache__/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 仓库根目录常见安装包缓存（按需可删）
+/*.exe

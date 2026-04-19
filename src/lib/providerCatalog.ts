@@ -30,6 +30,11 @@ const DEFAULT_GIT: AppSettings['git'] = {
   branch: 'main',
 };
 
+const DEFAULT_ANALYSIS: AppSettings['analysis'] = {
+  provider: 'gemini',
+  autoScan: true,
+};
+
 export const BUILTIN_PROVIDER_MODELS: Record<ProviderType, string[]> = {
   gemini: [
     'gemini-2.5-flash',
@@ -54,20 +59,12 @@ export const BUILTIN_PROVIDER_MODELS: Record<ProviderType, string[]> = {
     'gpt-4',
     'gpt-3.5-turbo',
   ],
-  custom: [
-    'gpt-5.4',
-    'gpt-5.4-mini',
-    'gpt-4o',
-    'gpt-4o-mini',
-    'gpt-4.1',
-    'gpt-4.1-mini',
-    'deepseek-chat',
-    'deepseek-reasoner',
-    'qwen-max',
-    'qwen-plus',
-    'glm-4.5',
-    'claude-3-7-sonnet-latest',
+  vertex_ai: [
+    'gemini-1.5-pro',
+    'gemini-1.5-flash',
+    'gemini-1.0-pro',
   ],
+  custom: ['default'],
 };
 
 type ProviderSeed = Omit<ProviderConfig, 'models'> & {models?: string[]};
@@ -103,6 +100,14 @@ const PROVIDER_SEEDS: Record<ProviderType, ProviderSeed> = {
     baseUrl: '',
     enabled: true,
     wireApi: 'chat_completions',
+  },
+  vertex_ai: {
+    id: 'vertex_ai',
+    name: 'Google Vertex AI',
+    apiKey: '',
+    projectId: '',
+    baseUrl: 'us-central1', // Using baseUrl as location
+    enabled: true,
   },
 };
 
@@ -178,12 +183,14 @@ export function createDefaultSettings(): AppSettings {
       claude: buildDefaultProviderConfig('claude'),
       openai: buildDefaultProviderConfig('openai'),
       custom: buildDefaultProviderConfig('custom'),
+      vertex_ai: buildDefaultProviderConfig('vertex_ai'),
     },
     collaboration: {
       enabled: DEFAULT_COLLABORATION.enabled,
       agents: DEFAULT_COLLABORATION.agents.map((agent) => ({...agent})),
     },
     git: {...DEFAULT_GIT},
+    analysis: {...DEFAULT_ANALYSIS},
   };
 }
 
@@ -233,6 +240,10 @@ export function normalizeSettings(raw?: Partial<AppSettings> | null): AppSetting
     git: {
       ...DEFAULT_GIT,
       ...(raw?.git ?? {}),
+    },
+    analysis: {
+      ...DEFAULT_ANALYSIS,
+      ...(raw?.analysis ?? {}),
     },
   };
 }

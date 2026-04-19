@@ -38,27 +38,54 @@ export const DEFAULT_SETTINGS: AppSettings = {
       baseUrl: '',
       enabled: true,
       models: ['default']
+    },
+    vertex_ai: {
+      id: 'vertex_ai',
+      name: 'Vertex AI',
+      apiKey: '',
+      projectId: '',
+      baseUrl: 'us-central1',
+      enabled: true,
+      models: ['gemini-1.5-pro', 'gemini-1.5-flash']
     }
   },
   collaboration: {
-    enabled: false,
+    enabled: true,
     agents: [
       {
-        id: 'reviewer',
-        name: '代码审查员',
-        role: 'reviewer',
+        id: 'pm',
+        name: '项目经理 (PM)',
+        role: 'pm',
         provider: 'gemini',
         model: 'gemini-2.5-flash',
-        systemPrompt: '你是代码审查专家，负责检查代码的质量、逻辑和潜在漏洞。',
+        systemPrompt: '你是资深项目经理，负责分解任务、规划开发周期（规划、设计、开发、测试、部署）并监督项目进度。',
         enabled: true
       },
       {
         id: 'architect',
-        name: '架构师',
+        name: '首席架构师',
         role: 'architect',
         provider: 'gemini',
         model: 'gemini-2.5-pro',
         systemPrompt: '你是资深软件架构师，负责系统的整体设计和技术栈选型建议。',
+        enabled: true
+      },
+      {
+        id: 'developer',
+        name: '全栈工程师',
+        role: 'developer',
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        systemPrompt: '你是全栈开发专家，精通 TypeScript, React 和 Node.js，负责高质量的代码实施。',
+        enabled: true
+      },
+      {
+        id: 'reviewer',
+        name: '代码审计员',
+        role: 'reviewer',
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        systemPrompt: '你是代码审查专家，负责检查代码的质量、逻辑和潜在漏洞。',
         enabled: true
       }
     ]
@@ -67,5 +94,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     enabled: false,
     repoUrl: '',
     branch: 'main'
+  },
+  analysis: {
+    provider: 'gemini',
+    autoScan: true
   }
 };

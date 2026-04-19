@@ -4,6 +4,7 @@ mod claude_cli;
 mod git;
 mod local_config;
 mod models;
+mod project_analysis;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,7 +26,8 @@ pub fn run() {
       chat::chat_completion,
       chat::generate_chat_title,
       chat::fetch_provider_models,
-      git::git_sync
+      git::git_sync,
+      project_analysis::analyze_project
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

@@ -142,6 +142,15 @@ pub struct FetchProviderModelsResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct ProjectAnalysisPayload {
+  pub root_path: String,
+  pub settings: AppSettings,
+  #[serde(default)]
+  pub active_model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct GitSyncPayload {
   #[serde(default)]
   pub git: GitSettings,

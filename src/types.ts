@@ -7,13 +7,14 @@ export interface Message {
   timestamp: number;
 }
 
-export type ProviderType = 'gemini' | 'claude' | 'openai' | 'custom';
+export type ProviderType = 'gemini' | 'claude' | 'openai' | 'custom' | 'vertex_ai';
 
 export interface ProviderConfig {
   id: ProviderType;
   name: string;
   apiKey: string;
   authToken?: string;
+  projectId?: string;
   baseUrl?: string;
   enabled: boolean;
   models: string[];
@@ -45,12 +46,54 @@ export interface AppSettings {
     agents: AgentConfig[];
   };
   git: GitSettings;
+  analysis: {
+    provider: AnalysisProvider;
+    autoScan: boolean;
+  };
 }
 
 export interface PersistedAppState {
   chats: Chat[];
   settings: AppSettings;
   activeChatId: string | null;
+}
+
+export type ProjectPhase = 'planning' | 'design' | 'development' | 'testing' | 'deployment' | 'maintenance';
+
+export type AnalysisProvider = 'gemini' | 'openai' | 'vertex-ai';
+
+export interface ProjectInsight {
+  id: string;
+  category: 'architecture' | 'performance' | 'security' | 'trends';
+  title: string;
+  description: string;
+  suggestion: string;
+  priority: 'low' | 'medium' | 'high';
+  hasFix?: boolean;
+}
+
+export interface AnalysisResult {
+  insights: ProjectInsight[];
+  radar: {
+    performance: number;
+    security: number;
+    maintainability: number;
+    innovation: number;
+    robustness: number;
+  };
+  context: {
+    tree: any[];
+    summary: string;
+    dependencies?: Record<string, string[]>;
+  };
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  status: 'todo' | 'in_progress' | 'completed' | 'blocked';
+  assigneeId: string; // references AgentConfig.id
+  phase: ProjectPhase;
 }
 
 export interface Chat {
@@ -62,4 +105,6 @@ export interface Chat {
   provider?: ProviderType;
   effort?: 'low' | 'medium' | 'high';
   workspace?: string;
+  currentPhase?: ProjectPhase;
+  tasks?: Task[];
 }

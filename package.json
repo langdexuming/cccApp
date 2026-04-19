@@ -9,8 +9,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "tauri:build": "tauri build",
-    "tauri:dev": "tauri dev"
+    "tauri:build": "node scripts/tauri-with-path.mjs build",
+    "tauri:dev": "node scripts/tauri-with-path.mjs dev"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

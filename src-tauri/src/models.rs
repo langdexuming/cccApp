@@ -75,6 +75,9 @@ pub struct ProviderConfig {
   pub name: String,
   #[serde(default)]
   pub api_key: String,
+  /// GCP Project ID（Vertex AI）
+  #[serde(default)]
+  pub project_id: String,
   #[serde(default)]
   pub auth_token: String,
   pub base_url: Option<String>,

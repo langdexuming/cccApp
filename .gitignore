@@ -3,15 +3,29 @@ build/
 dist/
 coverage/
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.log
 .env*
 !.env.example
 
+# 前端构建与工具缓存
+.vite/
+.parcel-cache/
+.turbo/
+.next/
+.cache/
+*.tsbuildinfo
+pnpm-debug.log*
+yarn-error.log*
+
 # Rust / Cargo 生成
-src-tauri/target/
 **/target/
-.cargo-target/
+src-tauri/target/
 src-tauri/target-*/
+# 自定义 Cargo 输出目录（如 CARGO_TARGET_DIR=.cargo-target）
+.cargo-target/
+**/.cargo-target/
 
 # 本地运行产生的数据与 SQLite 等
 runtime/
@@ -20,10 +34,11 @@ runtime/
 .local-msvc/
 .claude/
 artifacts/
-.turbo/
-.next/
-.cache/
-*.tsbuildinfo
+*.stackdump
+
+# Tauri icon 在 icons 下生成的移动端资源（按需保留时可从本段删除）
+src-tauri/icons/android/
+src-tauri/icons/ios/
 
 # Python 缓存（若后续再引入脚本）
 **/__pycache__/

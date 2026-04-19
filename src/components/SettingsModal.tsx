@@ -277,7 +277,12 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                 <div className="space-y-6">
                   <div className="flex items-center justify-between"><h3 className="text-sm font-bold uppercase tracking-wider text-text-primary">{currentProviderConfig.name} 配置</h3><button onClick={() => updateProvider(currentProvider, {enabled: !currentProviderConfig.enabled})} className={cn('rounded-full px-3 py-1 text-xs font-bold', currentProviderConfig.enabled ? 'bg-accent-theme text-white' : 'bg-zinc-200 text-zinc-600')}>{currentProviderConfig.enabled ? '已启用' : '已关闭'}</button></div>
                   <div className="space-y-4 rounded-2xl border border-border-theme bg-zinc-50 p-4">
-                    <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">API Key / OAuth Token</label><input type="password" value={currentProviderConfig.apiKey} onChange={(e) => updateProvider(currentProvider, {apiKey: e.target.value})} placeholder={`输入 ${currentProviderConfig.name} 的 API Key`} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
+                    {currentProvider === 'vertex_ai' ? (
+                      <p className="text-[11px] leading-relaxed text-text-secondary rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2">
+                        请在聊天顶栏选中「Google Vertex AI」。接入与官方一致：HTTPS 主机名为「区域 -aiplatform.googleapis.com」，路径为 v1/projects/项目ID/locations/区域/publishers/google/models/模型名:generateContent；令牌 scope 为 https://www.googleapis.com/auth/cloud-platform。桌面版若留空令牌，使用 gcp_auth 的 ADC（服务账号 JSON 路径放 GOOGLE_APPLICATION_CREDENTIALS，或执行 gcloud auth application-default login）；也可手动粘贴短期 OAuth 访问令牌。连接超时请检查代理/VPN 或 HTTPS_PROXY。
+                      </p>
+                    ) : null}
+                    <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">{currentProvider === 'vertex_ai' ? 'OAuth 访问令牌（可选，桌面留空走 ADC）' : 'API Key / OAuth Token'}</label><input type="password" value={currentProviderConfig.apiKey} onChange={(e) => updateProvider(currentProvider, {apiKey: e.target.value})} placeholder={currentProvider === 'vertex_ai' ? '留空则桌面端使用 gcp_auth / ADC' : `输入 ${currentProviderConfig.name} 的 API Key`} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
                     {currentProvider === 'vertex_ai' ? (
                       <>
                         <div className="space-y-1.5">

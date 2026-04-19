@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { Message, AppSettings } from "../types";
 import {
+  isTauriRuntime,
   requestDesktopChatCompletion,
   requestDesktopTitle,
 } from "../lib/desktop";
@@ -38,7 +39,12 @@ export async function* streamChat(
             ? process.env.GEMINI_API_KEY
             : agentProvider.apiKey;
 
-        if (!agentApiKey) {
+        if (agent.provider === 'vertex_ai') {
+          if (!agentProvider.apiKey?.trim() || !agentProvider.projectId?.trim()) {
+            yield `警告: 代理 ${agent.name} 需要配置 Vertex 的 Project ID 与 Bearer Token。\n\n`;
+            continue;
+          }
+        } else if (!agentApiKey) {
           yield `警告: 代理 ${agent.name} 所需的 ${agentProvider.name} API Key 未配置。\n\n`;
           continue;
         }
@@ -58,6 +64,17 @@ export async function* streamChat(
             case 'gemini':
               yield* streamGemini(agentMessages, agentApiKey, agent.model, agentProvider.baseUrl);
               break;
+            case 'vertex_ai': {
+              const token = agentProvider.apiKey?.trim();
+              const pid = agentProvider.projectId?.trim();
+              const loc = agentProvider.baseUrl?.trim() || 'us-central1';
+              if (!token || !pid) {
+                yield `警告: 代理 ${agent.name} 需要配置 Vertex 的 Project ID 与 Bearer Token。\n\n`;
+                break;
+              }
+              yield* streamVertexGemini(agentMessages, token, agent.model, pid, loc);
+              break;
+            }
             case 'claude':
               yield* streamClaude(
                 agentMessages,
@@ -93,7 +110,17 @@ export async function* streamChat(
       ? process.env.GEMINI_API_KEY
       : provider.apiKey;
 
-  if (!apiKey) {
+  if (settings.activeProvider === 'vertex_ai') {
+    const pid = provider.projectId?.trim();
+    if (!pid) {
+      throw new Error('请配置 Vertex AI 的 GCP Project ID。');
+    }
+    if (!isTauriRuntime() && !provider.apiKey?.trim()) {
+      throw new Error(
+        '网页环境使用 Vertex 需在「API Key / OAuth Token」填写 OAuth 访问令牌；桌面版可留空，将使用 gcp_auth（Application Default Credentials，与 gcloud auth application-default login 一致）。',
+      );
+    }
+  } else if (!apiKey) {
     throw new Error(`请先在设置中配置 ${provider.name} 的 API Key`);
   }
 
@@ -101,6 +128,13 @@ export async function* streamChat(
     case 'gemini':
       yield* streamGemini(messages, apiKey, activeModel, provider.baseUrl);
       break;
+    case 'vertex_ai': {
+      const token = provider.apiKey!.trim();
+      const pid = provider.projectId!.trim();
+      const loc = provider.baseUrl?.trim() || 'us-central1';
+      yield* streamVertexGemini(messages, token, activeModel, pid, loc);
+      break;
+    }
     case 'claude':
       yield* streamClaude(
         messages,
@@ -143,6 +177,70 @@ function createGeminiClient(apiKey: string, baseUrl?: string) {
     apiKey,
     ...(trimmedBaseUrl ? {baseURL: trimmedBaseUrl} : {}),
   });
+}
+
+function buildVertexGenerateBody(messages: Message[]) {
+  const systemMessage = messages.find((m) => m.role === 'system');
+  const chatMessages = messages.filter((m) => m.role !== 'system');
+  const contents = chatMessages.map((m) => ({
+    role: m.role === 'user' ? 'user' : 'model',
+    parts: [{ text: m.content }],
+  }));
+  const body: Record<string, unknown> = { contents };
+  if (systemMessage?.content?.trim()) {
+    body.systemInstruction = { parts: [{ text: systemMessage.content }] };
+  }
+  return body;
+}
+
+function textFromVertexGenerateResponse(data: unknown): string {
+  const d = data as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    error?: { message?: string };
+  };
+  if (d?.error?.message) {
+    throw new Error(d.error.message);
+  }
+  const parts = d?.candidates?.[0]?.content?.parts;
+  return parts?.map((p) => p.text ?? '').join('') ?? '';
+}
+
+async function* streamVertexGemini(
+  messages: Message[],
+  accessToken: string,
+  model: string,
+  projectId: string,
+  location: string,
+) {
+  const loc = location.trim() || 'us-central1';
+  const pid = projectId.trim();
+  const m = model.trim();
+  const url = `https://${loc}-aiplatform.googleapis.com/v1/projects/${pid}/locations/${loc}/publishers/google/models/${m}:generateContent`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken.trim()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(buildVertexGenerateBody(messages)),
+  });
+  let data: unknown = {};
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+  if (!res.ok) {
+    const msg =
+      (data as { error?: { message?: string } })?.error?.message ||
+      `Vertex AI 请求失败（HTTP ${res.status}）`;
+    throw new Error(msg);
+  }
+  const text = textFromVertexGenerateResponse(data);
+  if (!text.trim()) {
+    throw new Error('Vertex AI 返回了空内容');
+  }
+  yield* yieldTextInChunks(text);
 }
 
 async function* streamGemini(messages: Message[], apiKey: string, model: string, baseUrl?: string) {
@@ -518,7 +616,13 @@ export async function generateTitle(firstMessage: string, settings: AppSettings)
   }
 
   const provider = settings.providers[settings.activeProvider];
-  if (!provider.apiKey) return "New Chat";
+  if (settings.activeProvider === 'vertex_ai') {
+    if (!provider.apiKey?.trim() || !provider.projectId?.trim()) {
+      return 'New Chat';
+    }
+  } else if (!provider.apiKey) {
+    return 'New Chat';
+  }
 
   try {
     if (settings.activeProvider === 'gemini') {
@@ -528,6 +632,28 @@ export async function generateTitle(firstMessage: string, settings: AppSettings)
         contents: `Generate a very short, concise title (max 5 words) for a chat that starts with: "${firstMessage}". Return only the title text.`,
       });
       return response.text?.trim() || "New Chat";
+    }
+    if (settings.activeProvider === 'vertex_ai') {
+      const loc = provider.baseUrl?.trim() || 'us-central1';
+      const pid = provider.projectId!.trim();
+      const modelId = provider.models[0] || 'gemini-2.5-flash';
+      const url = `https://${loc}-aiplatform.googleapis.com/v1/projects/${pid}/locations/${loc}/publishers/google/models/${modelId}:generateContent`;
+      const prompt = `Generate a very short, concise title (max 5 words) for a chat that starts with: "${firstMessage}". Return only the title text.`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${provider.apiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return 'New Chat';
+      }
+      return textFromVertexGenerateResponse(data).trim() || 'New Chat';
     } else {
       // Fallback for others using OpenAI-like format
       // Simplified for title generation

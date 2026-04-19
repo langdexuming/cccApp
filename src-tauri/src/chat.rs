@@ -1,4 +1,5 @@
 use std::{
+  error::Error,
   process,
   time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -296,6 +297,9 @@ const CLAUDE_CLI_VERSION_WITH_FINGERPRINT: &str = "2.1.113.f12";
 const CLAUDE_CLI_ENTRYPOINT: &str = "sdk-cli";
 const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
 const HTTP_REQUEST_TIMEOUT_SECS: u64 = 25;
+/// Vertex 走 Google 边缘域名，跨境或受限网络下握手更慢，单独放宽超时。
+const VERTEX_HTTP_CONNECT_TIMEOUT_SECS: u64 = 90;
+const VERTEX_HTTP_REQUEST_TIMEOUT_SECS: u64 = 300;
 
 #[derive(Clone, Copy)]
 enum ClaudeAuthModeKind {
@@ -548,6 +552,80 @@ fn build_http_client() -> Result<Client, String> {
     .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECS))
     .build()
     .map_err(|err| format!("failed to create HTTP client: {err}"))
+}
+
+fn build_vertex_http_client() -> Result<Client, String> {
+  Client::builder()
+    .connect_timeout(Duration::from_secs(VERTEX_HTTP_CONNECT_TIMEOUT_SECS))
+    .timeout(Duration::from_secs(VERTEX_HTTP_REQUEST_TIMEOUT_SECS))
+    .build()
+    .map_err(|err| format!("failed to create Vertex HTTP client: {err}"))
+}
+
+fn normalize_vertex_project_id(raw: &str) -> String {
+  let trimmed = raw.trim().trim_end_matches('/');
+  trimmed
+    .strip_prefix("projects/")
+    .unwrap_or(trimmed)
+    .trim()
+    .to_string()
+}
+
+fn chain_transport_error(err: &reqwest::Error) -> String {
+  let mut out = err.to_string();
+  let mut src = err.source();
+  let mut n = 0;
+  while let Some(e) = src {
+    out.push_str(" → ");
+    out.push_str(&e.to_string());
+    n += 1;
+    if n >= 6 {
+      break;
+    }
+    src = e.source();
+  }
+  out
+}
+
+fn vertex_generate_content_url(project_id: &str, location: &str, model: &str) -> String {
+  let pid = normalize_vertex_project_id(project_id);
+  let loc = location.trim();
+  let m = model.trim();
+  format!(
+    "https://{loc}-aiplatform.googleapis.com/v1/projects/{pid}/locations/{loc}/publishers/google/models/{m}:generateContent"
+  )
+}
+
+fn vertex_location(provider: &ProviderConfig) -> &str {
+  provider
+    .base_url
+    .as_deref()
+    .map(str::trim)
+    .filter(|value| !value.is_empty())
+    .unwrap_or("us-central1")
+}
+
+fn gemini_generate_content_text(value: &Value) -> Result<String, String> {
+  let text = value["candidates"]
+    .as_array()
+    .and_then(|items| items.first())
+    .and_then(|item| item.get("content"))
+    .and_then(|content| content.get("parts"))
+    .and_then(Value::as_array)
+    .map(|parts| {
+      parts
+        .iter()
+        .filter_map(|part| part.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("")
+    })
+    .unwrap_or_default();
+
+  if text.trim().is_empty() {
+    Err("Gemini 返回了空内容".to_string())
+  } else {
+    Ok(text)
+  }
 }
 
 fn gemini_generate_content_url(provider: &ProviderConfig, model: &str, api_key: &str) -> String {
@@ -1140,26 +1218,78 @@ async fn request_gemini(
     .json::<Value>()
     .await
     .map_err(|err| format!("failed to parse Gemini response: {err}"))?;
-  let text = value["candidates"]
-    .as_array()
-    .and_then(|items| items.first())
-    .and_then(|item| item.get("content"))
-    .and_then(|content| content.get("parts"))
-    .and_then(Value::as_array)
-    .map(|parts| {
-      parts
-        .iter()
-        .filter_map(|part| part.get("text").and_then(Value::as_str))
-        .collect::<Vec<_>>()
-        .join("")
-    })
-    .unwrap_or_default();
+  gemini_generate_content_text(&value)
+}
 
-  if text.trim().is_empty() {
-    Err("Gemini 返回了空内容".to_string())
-  } else {
-    Ok(text)
+/// 与 Vertex 官方计费路径一致：`…/v1/projects/{project}/locations/{loc}/publishers/google/models/{model}:generateContent`
+const VERTEX_CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
+
+async fn vertex_bearer_token(manual_token: &str) -> Result<String, String> {
+  let trimmed = manual_token.trim();
+  if !trimmed.is_empty() {
+    return Ok(trimmed.to_string());
   }
+  let provider = gcp_auth::provider().await.map_err(|err| {
+    format!(
+      "Vertex 本机认证失败（gcp_auth）: {err}。请设置 GOOGLE_APPLICATION_CREDENTIALS、执行 gcloud auth application-default login，或在设置中填写 OAuth 访问令牌。"
+    )
+  })?;
+  let scopes = [VERTEX_CLOUD_PLATFORM_SCOPE];
+  let token = provider.token(&scopes).await.map_err(|err| {
+    format!("Vertex 获取 cloud-platform 令牌失败: {err}")
+  })?;
+  Ok(token.as_str().to_string())
+}
+
+async fn request_vertex_gemini(
+  client: &Client,
+  provider: &ProviderConfig,
+  model: &str,
+  contents: Value,
+) -> Result<String, String> {
+  let project_id = normalize_vertex_project_id(&provider.project_id);
+  if project_id.is_empty() {
+    return Err("请先在设置中填写 Vertex AI 的 GCP Project ID".to_string());
+  }
+  let bearer = vertex_bearer_token(&provider.api_key).await?;
+  let location = vertex_location(provider);
+  let url = vertex_generate_content_url(&project_id, location, model.trim());
+  let response = client
+    .post(url)
+    .bearer_auth(bearer.trim())
+    .json(&json!({
+      "contents": contents,
+    }))
+    .send()
+    .await
+    .map_err(|err| {
+      let detail = chain_transport_error(&err);
+      let mut msg = format!("Vertex AI 连接失败（未收到 HTTP 响应）: {detail}");
+      if err.is_timeout() || detail.contains("timed out") {
+        msg.push_str(
+          " 常见原因：本机无法在超时时间内连上 *.googleapis.com（跨境网络、运营商路由、防火墙）。可尝试稳定代理/VPN、更换网络，或在系统环境变量中配置 HTTPS_PROXY 后重开应用。",
+        );
+      } else if detail.contains("certificate") || detail.contains("Certificate") {
+        msg.push_str(" 若为证书错误，请确认企业代理/杀毒未劫持 HTTPS，并已使用系统证书（本应用 reqwest 已启用 rustls-native-roots）。");
+      }
+      msg
+    })?;
+
+  if !response.status().is_success() {
+    return Err(api_error(response).await);
+  }
+
+  let value = response
+    .json::<Value>()
+    .await
+    .map_err(|err| format!("failed to parse Vertex AI response: {err}"))?;
+  gemini_generate_content_text(&value).map_err(|_| {
+    value
+      .get("error")
+      .and_then(|error| error.get("message").and_then(Value::as_str))
+      .unwrap_or("Vertex AI 返回了空内容")
+      .to_string()
+  })
 }
 
 async fn chat_with_claude(
@@ -1438,7 +1568,11 @@ fn text_prompt_for_title(first_message: &str) -> String {
 #[tauri::command]
 pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, String> {
   let (provider_id, provider) = active_provider(&payload.settings)?;
-  let client = build_http_client()?;
+  let client = if provider_id == "vertex_ai" {
+    build_vertex_http_client()?
+  } else {
+    build_http_client()?
+  };
 
   match provider_id.as_str() {
     "gemini" => {
@@ -1447,6 +1581,15 @@ pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, S
         &client,
         &provider,
         &api_key,
+        &payload.active_model,
+        gemini_messages(&payload.messages),
+      )
+      .await
+    }
+    "vertex_ai" => {
+      request_vertex_gemini(
+        &client,
+        &provider,
         &payload.active_model,
         gemini_messages(&payload.messages),
       )
@@ -1511,11 +1654,19 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
     {
       return Ok("New Chat".to_string());
     }
+  } else if provider_id == "vertex_ai" {
+    if provider.project_id.trim().is_empty() {
+      return Ok("New Chat".to_string());
+    }
   } else if provider.api_key.trim().is_empty() {
     return Ok("New Chat".to_string());
   }
 
-  let client = build_http_client()?;
+  let client = if provider_id == "vertex_ai" {
+    build_vertex_http_client()?
+  } else {
+    build_http_client()?
+  };
   let prompt = text_prompt_for_title(&payload.first_message);
   let title = match provider_id.as_str() {
     "gemini" => {
@@ -1525,6 +1676,19 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
         &client,
         &provider,
         &api_key,
+        &model,
+        Value::Array(vec![json!({
+          "role": "user",
+          "parts": [{ "text": prompt }],
+        })]),
+      )
+      .await?
+    }
+    "vertex_ai" => {
+      let model = model_or_default(&provider, "gemini-2.5-flash");
+      request_vertex_gemini(
+        &client,
+        &provider,
         &model,
         Value::Array(vec![json!({
           "role": "user",
@@ -1690,6 +1854,7 @@ data: {"type":"message_stop"}
       id: "claude".to_string(),
       name: "Claude".to_string(),
       api_key: String::new(),
+      project_id: String::new(),
       auth_token: String::new(),
       base_url: Some("https://example.com".to_string()),
       wire_api: None,

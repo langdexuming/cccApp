@@ -1,0 +1,33 @@
+paths:
+  project_root: E:/ai/ai_trains
+  env_root: E:/.env_trains
+  wsl_root: E:/wsl
+
+  runtime_root: E:/ai/ai_trains/runtime
+  sqlite_root: E:/ai/ai_trains/runtime/sqlite
+  datasets_root: E:/ai/ai_trains/runtime/datasets
+  templates_root: E:/ai/ai_trains/runtime/templates
+  experiments_root: E:/ai/ai_trains/runtime/experiments
+  runs_root: E:/ai/ai_trains/runtime/runs
+  artifacts_root: E:/ai/ai_trains/runtime/artifacts
+  logs_root: E:/ai/ai_trains/runtime/logs
+  reports_root: E:/ai/ai_trains/runtime/reports
+
+  python_venvs_root: E:/.env_trains/venvs
+  python_root: E:/.env_trains/python311
+  external_src_root: E:/.env_trains/src
+  llamafactory_cli_path: E:/.env_trains/venvs/lf-py311/Scripts/llamafactory-cli.exe
+  worker_python_path: E:/.env_trains/venvs/lf-py311/Scripts/python.exe
+  llama_cpp_root: E:/.env_trains/src/llama.cpp
+  gguf_converter_script_path: E:/.env_trains/src/llama.cpp/convert_hf_to_gguf.py
+  gguf_quantize_cli_path: E:/.env_trains/src/llama.cpp/build/bin/Release/llama-quantize.exe
+  gguf_artifacts_root: E:/ai/ai_trains/runtime/artifacts/gguf
+  gguf_default_outtype: f16
+  ollama_cli_path: ollama
+  pip_cache_root: E:/.env_trains/cache/pip
+  huggingface_cache_root: E:/.env_trains/cache/huggingface
+  torch_cache_root: E:/.env_trains/cache/torch
+  npm_cache_root: E:/.env_trains/cache/npm
+  modelscope_cache_root: E:/.env_trains/cache/modelscope
+  tmp_root: E:/.env_trains/tmp
+  ollama_models_root: E:/.env_trains/cache/ollama

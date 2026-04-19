@@ -1,4 +1,4 @@
-# LLaMA-Factory 一期落地说明
+﻿# LLaMA-Factory 一期落地说明
 
 本文档对应当前项目的一期目标：在 Windows 本机上完成 `训练 -> 导出 -> GGUF -> Ollama 注册 -> 离线评测` 的可执行闭环。
 
@@ -17,19 +17,19 @@
 - Python 环境：`E:\.env_trains\venvs\lf-py311`
 - LLaMA-Factory 源码：`E:\.env_trains\src\LLaMA-Factory`
 - llama.cpp 源码：`E:\.env_trains\src\llama.cpp`
-- 项目根目录：`E:\ai\ai_trains`
+- 项目根目录：`<本仓库根>`
 
 ## 3. 基础安装
 
 先执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\01-init-layout.ps1
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\02-create-lf-venv.ps1
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\03-install-llamafactory.ps1
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\07-install-backend.ps1
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\08-install-frontend.ps1
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\13-install-llama-cpp.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\01-init-layout.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\02-create-lf-venv.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\03-install-llamafactory.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\07-install-backend.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\08-install-frontend.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\13-install-llama-cpp.ps1
 ```
 
 如果只做一期闭环验证，`13-install-llama-cpp.ps1` 完成到 `convert_hf_to_gguf.py` 可用即可。
@@ -52,19 +52,19 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\13-inst
 启动 API：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\05-run-api.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\05-run-api.ps1
 ```
 
 启动 Worker：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\06-run-worker.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\06-run-worker.ps1
 ```
 
 启动前端：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\09-run-frontend.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\09-run-frontend.ps1
 ```
 
 默认访问地址：
@@ -84,20 +84,20 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\09-run-
 
 也可以直接使用示例请求：
 
-- `E:\ai\ai_trains\examples\requests\llamafactory_sft_alarm_train.json`
+- `<本仓库根>\examples\requests\llamafactory_sft_alarm_train.json`
 
 ## 7. 用已有 merged 模型做闭环冒烟
 
 如果你已经有一个导出的 `merged` 模型目录，直接执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\14-smoke-lf-phase1.ps1 -RunId run_xxx
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\14-smoke-lf-phase1.ps1 -RunId run_xxx
 ```
 
 或直接指定目录：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\14-smoke-lf-phase1.ps1 -MergedDir E:\ai\ai_trains\runtime\runs\run_xxx\output\merged
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\14-smoke-lf-phase1.ps1 -MergedDir <本仓库根>\runtime\runs\run_xxx\output\merged
 ```
 
 该脚本会自动完成：
@@ -120,16 +120,16 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\14-smok
 训练与导出由 Worker 触发后，核心命令等价于：
 
 ```powershell
-E:\.env_trains\venvs\lf-py311\Scripts\llamafactory-cli.exe train E:\ai\ai_trains\runtime\runs\<run_id>\input\llamafactory.train.yaml
-E:\.env_trains\venvs\lf-py311\Scripts\llamafactory-cli.exe export E:\ai\ai_trains\runtime\runs\<run_id>\input\llamafactory.export.yaml
-E:\.env_trains\venvs\lf-py311\Scripts\python.exe E:\.env_trains\src\llama.cpp\convert_hf_to_gguf.py E:\ai\ai_trains\runtime\runs\<run_id>\output\merged --outfile E:\ai\ai_trains\runtime\runs\<run_id>\output\model.gguf --outtype f16
-ollama create <model_name> -f E:\ai\ai_trains\runtime\runs\<run_id>\output\Modelfile
+E:\.env_trains\venvs\lf-py311\Scripts\llamafactory-cli.exe train <本仓库根>\runtime\runs\<run_id>\input\llamafactory.train.yaml
+E:\.env_trains\venvs\lf-py311\Scripts\llamafactory-cli.exe export <本仓库根>\runtime\runs\<run_id>\input\llamafactory.export.yaml
+E:\.env_trains\venvs\lf-py311\Scripts\python.exe E:\.env_trains\src\llama.cpp\convert_hf_to_gguf.py <本仓库根>\runtime\runs\<run_id>\output\merged --outfile <本仓库根>\runtime\runs\<run_id>\output\model.gguf --outtype f16
+ollama create <model_name> -f <本仓库根>\runtime\runs\<run_id>\output\Modelfile
 ```
 
 如果后续补齐量化工具，再追加：
 
 ```powershell
-E:\.env_trains\src\llama.cpp\build\bin\Release\llama-quantize.exe E:\ai\ai_trains\runtime\runs\<run_id>\output\model.f16.gguf E:\ai\ai_trains\runtime\runs\<run_id>\output\model.gguf Q4_K_M
+E:\.env_trains\src\llama.cpp\build\bin\Release\llama-quantize.exe <本仓库根>\runtime\runs\<run_id>\output\model.f16.gguf <本仓库根>\runtime\runs\<run_id>\output\model.gguf Q4_K_M
 ```
 
 ## 9. 当前落地状态

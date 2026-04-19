@@ -12,7 +12,7 @@ Unified Gemini-style workbench frontend for the alarm diagnosis training and inf
 ## Install
 
 ```powershell
-cd E:\ai\ai_trains\frontend
+cd <本仓库根目录>\frontend
 $env:npm_config_cache='E:\.env_trains\cache\npm'
 npm install
 ```
@@ -20,7 +20,7 @@ npm install
 ## Run
 
 ```powershell
-cd E:\ai\ai_trains\frontend
+cd <本仓库根目录>\frontend
 $env:npm_config_cache='E:\.env_trains\cache\npm'
 npm run dev
 ```
@@ -35,7 +35,7 @@ Default addresses:
 If you need hot reload during frontend development:
 
 ```powershell
-cd E:\ai\ai_trains\frontend
+cd <本仓库根目录>\frontend
 $env:npm_config_cache='E:\.env_trains\cache\npm'
 npm run dev:hot
 ```
@@ -43,7 +43,7 @@ npm run dev:hot
 ## Build
 
 ```powershell
-cd E:\ai\ai_trains\frontend
+cd <本仓库根目录>\frontend
 $env:npm_config_cache='E:\.env_trains\cache\npm'
 npm run build
 ```

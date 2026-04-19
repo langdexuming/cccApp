@@ -26,7 +26,7 @@ Use the Python environment prepared under:
 
 - `E:\.env_trains\venvs\lf-py311`
 
-From [E:\ai\ai_trains\backend](E:\ai\ai_trains\backend):
+在**本仓库根目录**下的 `backend` 文件夹中执行（路径随你克隆位置而定）：
 
 ```powershell
 E:\.env_trains\venvs\lf-py311\Scripts\python.exe -m pip install -e .
@@ -50,14 +50,14 @@ E:\.env_trains\venvs\lf-py311\Scripts\python.exe -m app.workers.poller --interva
 2. Queue a run through `POST /api/experiments/{id}/runs`
 3. Start the worker
 4. Inspect `GET /api/runs/{id}`
-5. Check logs and artifacts under [runtime](E:\ai\ai_trains\runtime)
+5. Check logs and artifacts under 本仓库下的 `runtime/` 目录
 
 ## GGUF Tooling
 
 To enable the full phase-1 `export -> GGUF -> Ollama -> eval` chain on Windows:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\13-install-llama-cpp.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\13-install-llama-cpp.ps1
 ```
 
 The worker then looks for:

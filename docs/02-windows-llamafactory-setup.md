@@ -1,4 +1,4 @@
-# 一期 Windows 安装清单与目录初始化方案
+﻿# 一期 Windows 安装清单与目录初始化方案
 
 ## 目标
 
@@ -93,13 +93,13 @@ Ollama 官方 FAQ 说明：
 
 ### 平台运行目录
 
-- `E:\ai\ai_trains\runtime\sqlite`
-- `E:\ai\ai_trains\runtime\datasets`
-- `E:\ai\ai_trains\runtime\templates`
-- `E:\ai\ai_trains\runtime\runs`
-- `E:\ai\ai_trains\runtime\artifacts`
-- `E:\ai\ai_trains\runtime\logs`
-- `E:\ai\ai_trains\runtime\reports`
+- `<本仓库根>\runtime\sqlite`
+- `<本仓库根>\runtime\datasets`
+- `<本仓库根>\runtime\templates`
+- `<本仓库根>\runtime\runs`
+- `<本仓库根>\runtime\artifacts`
+- `<本仓库根>\runtime\logs`
+- `<本仓库根>\runtime\reports`
 
 ## 安装顺序
 
@@ -107,12 +107,12 @@ Ollama 官方 FAQ 说明：
 
 脚本：
 
-- [01-init-layout.ps1](E:\ai\ai_trains\scripts\windows\01-init-layout.ps1)
+- [01-init-layout.ps1](<本仓库根>\scripts\windows\01-init-layout.ps1)
 
 执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\01-init-layout.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\01-init-layout.ps1
 ```
 
 这个脚本会：
@@ -143,12 +143,12 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\01-init
 
 脚本：
 
-- [02-create-lf-venv.ps1](E:\ai\ai_trains\scripts\windows\02-create-lf-venv.ps1)
+- [02-create-lf-venv.ps1](<本仓库根>\scripts\windows\02-create-lf-venv.ps1)
 
 执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\02-create-lf-venv.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\02-create-lf-venv.ps1
 ```
 
 默认使用：
@@ -160,12 +160,12 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\02-crea
 
 脚本：
 
-- [03-install-llamafactory.ps1](E:\ai\ai_trains\scripts\windows\03-install-llamafactory.ps1)
+- [03-install-llamafactory.ps1](<本仓库根>\scripts\windows\03-install-llamafactory.ps1)
 
 执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\03-install-llamafactory.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\03-install-llamafactory.ps1
 ```
 
 默认行为：
@@ -183,19 +183,19 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\03-inst
 如果后面要装，可以执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\03-install-llamafactory.ps1 -InstallBitsAndBytes
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\03-install-llamafactory.ps1 -InstallBitsAndBytes
 ```
 
 ### 第 6 步：验证环境
 
 脚本：
 
-- [04-verify-lf.ps1](E:\ai\ai_trains\scripts\windows\04-verify-lf.ps1)
+- [04-verify-lf.ps1](<本仓库根>\scripts\windows\04-verify-lf.ps1)
 
 执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\04-verify-lf.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\04-verify-lf.ps1
 ```
 
 验证项：

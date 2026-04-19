@@ -18,9 +18,11 @@ CODE_GREEN = RGBColor(0xA6, 0xE2, 0x2E)
 CODE_YELLOW = RGBColor(0xE6, 0xDB, 0x74)
 CODE_COMMENT = RGBColor(0x75, 0x71, 0x5E)
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def find_target_ppt() -> Path:
-    resources = Path(r"E:\ai\ai_trains\resources")
+    resources = REPO_ROOT / "resources"
     return next(
         p
         for p in resources.glob("*.pptx")
@@ -302,8 +304,8 @@ def repair_slide_7(slide) -> None:
             ("  --local_dir /data/models/Qwen3.5-9B-Base", CODE_WHITE),
             ("", CODE_WHITE),
             ("# 6. 工作目录", CODE_COMMENT),
-            ("mkdir -p /mnt/e/ai/ai_trains/runtime/datasets", CODE_GREEN),
-            ("mkdir -p /mnt/e/ai/ai_trains/runtime/runs", CODE_GREEN),
+            ("mkdir -p ./runtime/datasets", CODE_GREEN),
+            ("mkdir -p ./runtime/runs", CODE_GREEN),
             ("", CODE_WHITE),
             ("# 7. GPU 检查", CODE_COMMENT),
             ('python -c "import torch; print(torch.cuda.is_available())"', CODE_YELLOW),
@@ -386,9 +388,9 @@ def repair_slide_10(slide) -> None:
             ("# 步骤一：合并 LoRA 适配器到基础模型", CODE_COMMENT),
             ("swift export \\", CODE_GREEN),
             ("  --model Qwen/Qwen3.5-9B-Base \\", CODE_WHITE),
-            ("  --adapters /mnt/e/ai/ai_trains/runtime/runs/{run_id}/output/adapter \\", CODE_YELLOW),
+            ("  --adapters ./runtime/runs/{run_id}/output/adapter \\", CODE_YELLOW),
             ("  --merge_lora true \\", CODE_WHITE),
-            ("  --output_dir /mnt/e/ai/ai_trains/runtime/runs/{run_id}/output/merged", CODE_GREEN),
+            ("  --output_dir ./runtime/runs/{run_id}/output/merged", CODE_GREEN),
         ],
     )
     set_code(
@@ -396,8 +398,8 @@ def repair_slide_10(slide) -> None:
         [
             ("# 步骤二：量化为 GGUF（仅 Ollama 需要）", CODE_COMMENT),
             ("python llama.cpp/convert_hf_to_gguf.py \\", CODE_GREEN),
-            ("  /mnt/e/ai/ai_trains/runtime/runs/{run_id}/output/merged \\", CODE_WHITE),
-            ("  --outfile /mnt/e/ai/ai_trains/runtime/artifacts/gguf/alarm-qwen35-9b-sft.gguf \\", CODE_YELLOW),
+            ("  ./runtime/runs/{run_id}/output/merged \\", CODE_WHITE),
+            ("  --outfile ./runtime/artifacts/gguf/alarm-qwen35-9b-sft.gguf \\", CODE_YELLOW),
             ("  --outtype q4_k_m", CODE_GREEN),
         ],
     )
@@ -425,7 +427,7 @@ def repair_slide_11(slide) -> None:
         slide.shapes[3],
         [
             ("# vLLM：推荐部署链路（读取 merged 模型）", CODE_COMMENT),
-            ("vllm serve /mnt/e/ai/ai_trains/runtime/runs/{run_id}/output/merged \\", CODE_GREEN),
+            ("vllm serve ./runtime/runs/{run_id}/output/merged \\", CODE_GREEN),
             ("  --served-model-name alarm-qwen35-9b-sft \\", CODE_WHITE),
             ("  --host 0.0.0.0 --port 8000 \\", CODE_WHITE),
             ("  --dtype auto \\", CODE_WHITE),

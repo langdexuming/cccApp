@@ -1,4 +1,4 @@
-# 第 3 步：一期平台脚手架
+﻿# 第 3 步：一期平台脚手架
 
 本步骤的目标是建立最小可运行骨架，而不是一次性把训练平台做满。
 
@@ -36,7 +36,7 @@
 
 后端依赖安装脚本：
 
-- [07-install-backend.ps1](E:\ai\ai_trains\scripts\windows\07-install-backend.ps1)
+- [07-install-backend.ps1](<本仓库根>\scripts\windows\07-install-backend.ps1)
 
 ## 当前 Worker 行为
 
@@ -60,10 +60,10 @@ Worker 目前会：
 
 关键路径：
 
-- [backend/app/main.py](E:\ai\ai_trains\backend\app\main.py)
-- [backend/app/models/entities.py](E:\ai\ai_trains\backend\app\models\entities.py)
-- [backend/app/adapters/trainer/llamafactory.py](E:\ai\ai_trains\backend\app\adapters\trainer\llamafactory.py)
-- [backend/app/workers/poller.py](E:\ai\ai_trains\backend\app\workers\poller.py)
+- [backend/app/main.py](<本仓库根>\backend\app\main.py)
+- [backend/app/models/entities.py](<本仓库根>\backend\app\models\entities.py)
+- [backend/app/adapters/trainer/llamafactory.py](<本仓库根>\backend\app\adapters\trainer\llamafactory.py)
+- [backend/app/workers/poller.py](<本仓库根>\backend\app\workers\poller.py)
 
 ## 下一步
 

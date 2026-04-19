@@ -1,4 +1,4 @@
-# 第 5 步：H5 前端脚手架
+﻿# 第 5 步：H5 前端脚手架
 
 当前已新增轻量 H5 前端骨架：
 
@@ -25,12 +25,12 @@
 
 ## 关键路径
 
-- [frontend/package.json](E:\ai\ai_trains\frontend\package.json)
-- [frontend/src/router/index.js](E:\ai\ai_trains\frontend\src\router\index.js)
-- [frontend/src/views/DashboardPage.vue](E:\ai\ai_trains\frontend\src\views\DashboardPage.vue)
-- [frontend/src/views/ExperimentCreatePage.vue](E:\ai\ai_trains\frontend\src\views\ExperimentCreatePage.vue)
-- [frontend/src/views/RunsPage.vue](E:\ai\ai_trains\frontend\src\views\RunsPage.vue)
-- [frontend/src/views/RunDetailPage.vue](E:\ai\ai_trains\frontend\src\views\RunDetailPage.vue)
+- [frontend/package.json](<本仓库根>\frontend\package.json)
+- [frontend/src/router/index.js](<本仓库根>\frontend\src\router\index.js)
+- [frontend/src/views/DashboardPage.vue](<本仓库根>\frontend\src\views\DashboardPage.vue)
+- [frontend/src/views/ExperimentCreatePage.vue](<本仓库根>\frontend\src\views\ExperimentCreatePage.vue)
+- [frontend/src/views/RunsPage.vue](<本仓库根>\frontend\src\views\RunsPage.vue)
+- [frontend/src/views/RunDetailPage.vue](<本仓库根>\frontend\src\views\RunDetailPage.vue)
 
 ## 交互范围
 

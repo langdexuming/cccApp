@@ -1,4 +1,4 @@
-# 第 7 步：ms-swift 9B-Base 预适配
+﻿# 第 7 步：ms-swift 9B-Base 预适配
 
 当前阶段的目标不是部署 `ms-swift`，而是先把平台层的训练配置、评测引用和运行产物接口接通。
 
@@ -20,17 +20,17 @@
 ## 数据集版本
 
 - `alarm_analysis_swift_sft_v1`
-  - 位置：`E:\ai\ai_trains\runtime\datasets\alarm_analysis_swift_sft_v1`
+  - 位置：`<本仓库根>\runtime\datasets\alarm_analysis_swift_sft_v1`
   - 格式：JSONL
   - 结构：`messages` 聊天样式，适配 `ms-swift` 自定义数据集
 
 - `alarm_analysis_eval_v1`
-  - 位置：`E:\ai\ai_trains\runtime\datasets\alarm_analysis_eval_v1`
+  - 位置：`<本仓库根>\runtime\datasets\alarm_analysis_eval_v1`
   - 用途：后续 Ollama 评测与 benchmark
 
 ## 示例请求
 
-- [swift_sft_alarm_analysis_qwen35_9b_base_preview.json](E:\ai\ai_trains\examples\requests\swift_sft_alarm_analysis_qwen35_9b_base_preview.json)
+- [swift_sft_alarm_analysis_qwen35_9b_base_preview.json](<本仓库根>\examples\requests\swift_sft_alarm_analysis_qwen35_9b_base_preview.json)
 
 这份请求会创建一个：
 

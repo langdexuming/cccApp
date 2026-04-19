@@ -1,15 +1,25 @@
 param(
     [string]$RunId,
     [string]$MergedDir,
-    [string]$ProjectRoot = "E:\ai\ai_trains",
+    [string]$ProjectRoot = "",
     [string]$EnvRoot = "E:\.env_trains",
     [string]$Outtype = "f16",
     [string]$OllamaModelName,
-    [string]$EvalDatasetPath = "E:\ai\ai_trains\runtime\datasets\alarm_analysis_eval_v1\smoke_eval.jsonl",
-    [string]$BenchmarkDatasetPath = "E:\ai\ai_trains\runtime\datasets\alarm_analysis_eval_v1\benchmark.jsonl",
+    [string]$EvalDatasetPath = "",
+    [string]$BenchmarkDatasetPath = "",
     [switch]$SkipBenchmark = $false,
     [switch]$Force = $false
 )
+
+if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
+    $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+}
+if ([string]::IsNullOrWhiteSpace($EvalDatasetPath)) {
+    $EvalDatasetPath = Join-Path $ProjectRoot "runtime\datasets\alarm_analysis_eval_v1\smoke_eval.jsonl"
+}
+if ([string]::IsNullOrWhiteSpace($BenchmarkDatasetPath)) {
+    $BenchmarkDatasetPath = Join-Path $ProjectRoot "runtime\datasets\alarm_analysis_eval_v1\benchmark.jsonl"
+}
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"

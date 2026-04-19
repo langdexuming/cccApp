@@ -11,6 +11,7 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFont
 from pptx import Presentation
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 STATUS_LABELS = {
     "STARTED": "进行中",
@@ -459,17 +460,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill automation pipeline assets and inject a screenshot into the PPT.")
     parser.add_argument(
         "--run-dir",
-        default=r"E:\ai\ai_trains\runtime\runs\run_20260412_053225_425ae0",
-        help="Run directory used to synthesize the pipeline log and screenshot.",
+        default=str(_REPO_ROOT / "runtime" / "runs"),
+        help="Run directory used to synthesize the pipeline log and screenshot (often a concrete run_* subfolder).",
     )
     parser.add_argument(
         "--image-output",
-        default=r"E:\ai\ai_trains\resources\screenshots\automation_pipeline_log.png",
+        default=str(_REPO_ROOT / "resources" / "screenshots" / "automation_pipeline_log.png"),
         help="PNG output path for the generated automation pipeline screenshot.",
     )
     parser.add_argument(
         "--resources-dir",
-        default=r"E:\ai\ai_trains\resources",
+        default=str(_REPO_ROOT / "resources"),
         help="Resources directory that contains the training introduction PPT.",
     )
     parser.add_argument(

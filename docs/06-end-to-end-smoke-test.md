@@ -1,4 +1,4 @@
-# 第 6 步：最小联调清单
+﻿# 第 6 步：最小联调清单
 
 这一步的目标不是先跑真实训练，而是先验证下面这条链路：
 
@@ -18,7 +18,7 @@
 
 你至少需要：
 
-1. 已完成 [02-windows-llamafactory-setup.md](E:\ai\ai_trains\docs\02-windows-llamafactory-setup.md) 中的目录和环境初始化
+1. 已完成 [02-windows-llamafactory-setup.md](<本仓库根>\docs\02-windows-llamafactory-setup.md) 中的目录和环境初始化
 2. 已安装后端依赖
 3. 已安装前端依赖
 4. 本机 `Ollama` 已启动
@@ -38,24 +38,24 @@
 ### 1. 复制示例数据
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\10-seed-sample-data.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\10-seed-sample-data.ps1
 ```
 
 复制后会得到：
 
-- `E:\ai\ai_trains\runtime\datasets\alarm_eval_v1`
-- `E:\ai\ai_trains\runtime\datasets\alarm_sft_v1`
+- `<本仓库根>\runtime\datasets\alarm_eval_v1`
+- `<本仓库根>\runtime\datasets\alarm_sft_v1`
 
 ### 2. 安装后端依赖
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\07-install-backend.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\07-install-backend.ps1
 ```
 
 ### 3. 安装前端依赖
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\08-install-frontend.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\08-install-frontend.ps1
 ```
 
 ## 启动顺序
@@ -63,19 +63,19 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\08-inst
 ### 1. 启动 API
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\05-run-api.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\05-run-api.ps1
 ```
 
 ### 2. 启动 Worker
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\06-run-worker.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\06-run-worker.ps1
 ```
 
 ### 3. 启动前端
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\09-run-frontend.ps1
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\09-run-frontend.ps1
 ```
 
 前端默认地址：
@@ -95,12 +95,12 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\09-run-
 然后执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\11-post-baseline-experiment.ps1 -OllamaModel "你的本地模型名"
+powershell -ExecutionPolicy Bypass -File <本仓库根>\scripts\windows\11-post-baseline-experiment.ps1 -OllamaModel "你的本地模型名"
 ```
 
 这个脚本会：
 
-1. 读取 [baseline_infer_alarm_eval.json](E:\ai\ai_trains\examples\requests\baseline_infer_alarm_eval.json)
+1. 读取 [baseline_infer_alarm_eval.json](<本仓库根>\examples\requests\baseline_infer_alarm_eval.json)
 2. 将 `YOUR_OLLAMA_MODEL` 替换为你传入的模型名
 3. 调用 `POST /api/experiments`
 4. 调用 `POST /api/experiments/{id}/runs`
@@ -133,17 +133,17 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\11-post
 
 重点看：
 
-- `E:\ai\ai_trains\runtime\runs\<run_id>\logs`
-- `E:\ai\ai_trains\runtime\runs\<run_id>\eval`
-- `E:\ai\ai_trains\runtime\runs\<run_id>\benchmark`
-- `E:\ai\ai_trains\runtime\reports\single\<run_id>.json`
+- `<本仓库根>\runtime\runs\<run_id>\logs`
+- `<本仓库根>\runtime\runs\<run_id>\eval`
+- `<本仓库根>\runtime\runs\<run_id>\benchmark`
+- `<本仓库根>\runtime\reports\single\<run_id>.json`
 
 ## 路线 B：最小训练样本准备
 
 示例训练数据已经给出：
 
-- [dataset_info.json](E:\ai\ai_trains\examples\datasets\alarm_sft_v1\dataset_info.json)
-- [alarm_sft_v1.json](E:\ai\ai_trains\examples\datasets\alarm_sft_v1\alarm_sft_v1.json)
+- [dataset_info.json](<本仓库根>\examples\datasets\alarm_sft_v1\dataset_info.json)
+- [alarm_sft_v1.json](<本仓库根>\examples\datasets\alarm_sft_v1\alarm_sft_v1.json)
 
 这个样本是一个极小的 `alpaca` 风格示例，只适合：
 
@@ -157,7 +157,7 @@ powershell -ExecutionPolicy Bypass -File E:\ai\ai_trains\scripts\windows\11-post
 
 训练实验模板：
 
-- [llamafactory_sft_alarm_train.json](E:\ai\ai_trains\examples\requests\llamafactory_sft_alarm_train.json)
+- [llamafactory_sft_alarm_train.json](<本仓库根>\examples\requests\llamafactory_sft_alarm_train.json)
 
 ## 当前最现实的限制
 

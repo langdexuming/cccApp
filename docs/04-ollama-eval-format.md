@@ -1,4 +1,4 @@
-# 第 4 步：Ollama 评测与压测数据格式
+﻿# 第 4 步：Ollama 评测与压测数据格式
 
 当前平台已经支持：
 
@@ -10,7 +10,7 @@
 
 每个评测集放在：
 
-`E:\ai\ai_trains\runtime\datasets\<evalset_version>\`
+`<本仓库根>\runtime\datasets\<evalset_version>\`
 
 建议文件：
 

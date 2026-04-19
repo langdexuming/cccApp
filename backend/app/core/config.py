@@ -43,7 +43,7 @@ class Settings(BaseModel):
     port: int = 18080
     log_level: str = "INFO"
 
-    database_url: str = "sqlite:///E:/ai/ai_trains/runtime/sqlite/app.db"
+    database_url: str = ""
 
     project_root: Path = REPO_ROOT
     env_root: Path = Path("E:/") / ".env_trains"

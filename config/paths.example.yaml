@@ -1,3 +1,0 @@
-# 留空表示使用 backend/app/core/config.py 中基于仓库根目录的默认路径。
-# 若在固定工作机（如 E: 盘缓存、LLaMA-Factory 等）上运行，可在此填写绝对路径覆盖。
-paths: {}

@@ -163,6 +163,7 @@ export default function App() {
         <ChatInterface
           chat={activeChat}
           onUpdateChat={handleUpdateChat}
+          onPatchChat={handlePatchChat}
           onNewChat={handleNewChat}
           chats={chats}
           onSelectChat={setActiveChatId}

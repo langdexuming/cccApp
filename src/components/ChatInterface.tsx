@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings } from 'lucide-react';
+import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings, FolderInput } from 'lucide-react';
 import { Message as MessageType, Chat, AppSettings, ProviderType } from '../types';
 import { DEFAULT_SETTINGS } from '../constants';
 import { Message } from './Message';
 import { streamChat, generateTitle } from '../services/chatService';
+import { isTauriRuntime } from '../lib/desktop';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
@@ -21,6 +22,7 @@ function pickValidModel(
 interface ChatInterfaceProps {
   chat: Chat | null;
   onUpdateChat: (chat: Chat) => void;
+  onPatchChat?: (chatId: string, patch: Partial<Chat>) => void;
   onNewChat: () => void;
   chats: Chat[];
   onSelectChat: (id: string) => void;
@@ -35,6 +37,7 @@ interface ChatInterfaceProps {
 export function ChatInterface({ 
   chat, 
   onUpdateChat, 
+  onPatchChat,
   onNewChat, 
   chats, 
   onSelectChat,
@@ -54,6 +57,11 @@ export function ChatInterface({
     pickValidModel(chat?.model, settings.providers[settings.activeProvider].models),
   );
   const [selectedEffort, setSelectedEffort] = useState<Chat['effort']>(chat?.effort || 'medium');
+  const [workspaceDraft, setWorkspaceDraft] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
 
   const activeProvider = settings.providers[settings.activeProvider];
   const allModels = activeProvider.models.map(m => ({
@@ -99,12 +107,12 @@ export function ChatInterface({
   }, [activeProvider.models, chat?.effort, chat?.id, chat?.model, chat?.provider, settings.activeProvider]);
 
   useEffect(() => {
+    setWorkspaceDraft(chat?.workspace?.trim() ?? '');
+  }, [chat?.id, chat?.workspace]);
+
+  useEffect(() => {
     onIsTypingChange?.(isLoading);
   }, [isLoading, onIsTypingChange]);
-  const [isListening, setIsListening] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -290,7 +298,11 @@ export function ChatInterface({
 
   return (
     <div className="flex-1 flex flex-col h-full bg-bg-main relative overflow-hidden">
-      <div className="absolute top-[15px] right-[20px] text-[10px] text-text-secondary bg-[#F0F0F0] px-2 py-1 rounded">TAURI NATIVE</div>
+      {isTauriRuntime() && (
+        <div className="absolute top-[15px] right-[20px] text-[10px] text-text-secondary bg-[#F0F0F0] px-2 py-1 rounded">
+          TAURI
+        </div>
+      )}
       
       {/* Header */}
       <header className="h-[60px] border-b border-border-theme flex items-center justify-between px-6 bg-white z-10">
@@ -311,6 +323,31 @@ export function ChatInterface({
             </h2>
             <ChevronDown className="w-3.5 h-3.5 text-text-secondary group-hover:text-text-primary transition-colors" />
           </div>
+          {chat && onPatchChat && (
+            <div className="hidden sm:flex items-center gap-1.5 min-w-0 max-w-[200px] md:max-w-xs ml-1" title="侧栏会话分组">
+              <FolderInput className="w-3.5 h-3.5 text-text-secondary shrink-0" aria-hidden />
+              <input
+                value={workspaceDraft}
+                onChange={(e) => setWorkspaceDraft(e.target.value)}
+                onBlur={() => {
+                  const next = workspaceDraft.trim();
+                  const prev = (chat.workspace ?? '').trim();
+                  if (next === prev) {
+                    return;
+                  }
+                  onPatchChat(chat.id, { workspace: next || undefined });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                placeholder="分组名…"
+                className="text-[11px] text-text-secondary bg-zinc-50 border border-border-theme rounded px-2 py-1 w-full min-w-0 outline-none focus:border-accent-theme"
+                title="用于侧栏会话分组；留空为「本地 / 未分组」"
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

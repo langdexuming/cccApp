@@ -23,6 +23,7 @@ interface ProjectAnalystProps {
   settings: AppSettings['analysis'];
   allProviders: AppSettings['providers'];
   onUpdateSettings: (settings: AppSettings['analysis']) => void;
+  onDiscussWithAI?: (prompt: string) => void;
   isEmbedded?: boolean;
 }
 
@@ -32,6 +33,7 @@ export function ProjectAnalyst({
   settings, 
   allProviders, 
   onUpdateSettings,
+  onDiscussWithAI,
   isEmbedded 
 }: ProjectAnalystProps) {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -210,9 +212,15 @@ export function ProjectAnalyst({
 具体描述：${insight.description}
 AI 建议：${insight.suggestion}
 
-你能帮我深入分析一下如果我要实施这个方案，具体的代码实现步骤是什么？有没有什么潜在的坑需要注意？`;
-    navigator.clipboard.writeText(prompt);
-    setCopiedMsg("讨论指令已复制！请直接粘贴发送给 AI 伙伴。");
+你能帮我深入分析一下如果我要实施这个方案，具体的代码实施步骤是什么？有没有什么潜在的坑需要注意？`;
+    
+    if (onDiscussWithAI) {
+      onDiscussWithAI(prompt);
+      setCopiedMsg("已将讨论内容发送至左侧 AI 聊天窗口！");
+    } else {
+      navigator.clipboard.writeText(prompt);
+      setCopiedMsg("讨论指令已复制！请直接粘贴发送给 AI 伙伴。");
+    }
     setTimeout(() => setCopiedMsg(null), 3000);
   };
 
@@ -222,8 +230,14 @@ AI 建议：${insight.suggestion}
 颠覆性影响：${dream.impact}
 
 作为一个前瞻性的技术专家，我想探讨一下这个幻觉在当前项目中落地的可能性。我们该如何从现在的架构一步步演进过去？有哪些实验性的库或框架可以开始小规模尝试？`;
-    navigator.clipboard.writeText(prompt);
-    setCopiedMsg("梦境探讨指令已复制！请直接粘贴发送给 AI 伙伴。");
+
+    if (onDiscussWithAI) {
+      onDiscussWithAI(prompt);
+      setCopiedMsg("已将梦境探讨内容发送至左侧 AI 聊天窗口！");
+    } else {
+      navigator.clipboard.writeText(prompt);
+      setCopiedMsg("梦境探讨指令已复制！请直接粘贴发送给 AI 伙伴。");
+    }
     setTimeout(() => setCopiedMsg(null), 3000);
   };
 

@@ -1,6 +1,6 @@
 {
-  "name": "Claude Desktop Clone",
-  "description": "A beautiful and concise Claude-like AI assistant interface powered by Gemini.",
+  "name": "天才程序员 - Claude 桌面版",
+  "description": "一个极其强大且美观的 Claude 桌面模拟器，专为天才程序员打造。",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": []
 }

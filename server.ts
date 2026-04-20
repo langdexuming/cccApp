@@ -2,6 +2,7 @@ import { exec } from 'child_process';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 
@@ -213,6 +214,10 @@ async function startServer() {
   // KAIROS API: Fetch background logs
   app.get('/api/kairos/logs', (req: any, res: any) => {
     res.json(getMemory());
+  });
+
+  app.get('/api/system/info', (req: any, res: any) => {
+    res.json({ hostname: os.hostname() });
   });
 
   // Vertex AI Proxy

@@ -29,7 +29,7 @@ export async function getProjectInsights(
       Key Files:
       ${Object.entries(context.files).map(([name, content]) => `--- ${name} ---\n${content}`).join('\n\n')}
       
-      Provide a comprehensive JSON analysis with:
+      Provide a comprehensive JSON analysis. IMPORTANT: All descriptions, titles, and suggestions MUST be in Chinese (Simplified).
       1. insights: 5-8 highly specific, actionable advice.
       2. radar: scores (0-100) for performance, security, maintainability, innovation, robustness.
       3. summary: a brief (1-sentence) technical summary of the project.
@@ -190,6 +190,7 @@ export async function getInsightFix(
       Category: ${insight.category}
 
       Provide a specific code fix for this insight based on the project context.
+      IMPORTANT: The explanation MUST be in Chinese (Simplified).
       
       File Tree:
       ${JSON.stringify(context.tree, null, 2)}
@@ -269,6 +270,7 @@ export async function generateProjectDocs(
     const prompt = `
       You are an expert technical writer and architect.
       Based on the following project context, generate a professional ARCHITECTURE.md document.
+      IMPORTANT: The entire document MUST be written in Chinese (Simplified).
       
       Include:
       1. Project Overview
@@ -339,6 +341,7 @@ export async function runPreflightChecks(
 
     const prompt = `
       You are a DevSecOps expert. Perform a "Pre-flight" check on this project before it goes to production.
+      IMPORTANT: All status messages and check names MUST be in Chinese (Simplified).
       
       Scan for:
       1. Missing .env.example or clear env requirements.
@@ -529,6 +532,7 @@ export async function getProjectRoadmap(
     const prompt = `
       You are a Strategic Tech Lead. 
       Analyze the project and suggest a technical roadmap for the next 3-6 months.
+      IMPORTANT: All titles and descriptions MUST be in Chinese (Simplified).
       
       File Tree: ${JSON.stringify(context.tree, null, 2)}
       
@@ -638,6 +642,7 @@ export async function getProjectDreams(
       You are a Visionary Futurist in Software Engineering. 
       "Dream" about the potential of this project. Do not give standard advice.
       Imagine radical technology shifts (e.g., decentralized storage, AI-agent self-writing logic, neural interfaces).
+      IMPORTANT: All topics, visions, and impacts MUST be in Chinese (Simplified).
       
       File Tree: ${JSON.stringify(context.tree, null, 2)}
       

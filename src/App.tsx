@@ -4,6 +4,7 @@ import {ChatInterface} from './components/ChatInterface';
 import {SettingsModal} from './components/SettingsModal';
 import {Sidebar} from './components/Sidebar';
 import {ProjectAnalyst} from './components/ProjectAnalyst';
+import {AutoUpdate} from './components/AutoUpdate';
 import type {AppSettings, Chat} from './types';
 import {cn} from './lib/utils';
 import {loadPersistedState, savePersistedState} from './lib/desktop';
@@ -22,6 +23,7 @@ export default function App() {
   const [isDesignPanelOpen, setIsDesignPanelOpen] = useState(true);
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
   const [hasLoadedPersistedState, setHasLoadedPersistedState] = useState(false);
+  const [externalMessage, setExternalMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,6 +143,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans selection:bg-orange-100 dark:selection:bg-orange-900/30">
+      <AutoUpdate />
       <AnimatePresence initial={false}>
         {isSidebarVisible && (
           <motion.div
@@ -180,6 +183,8 @@ export default function App() {
             onOpenSettings={() => setIsSettingsOpen(true)}
             isDesignPanelOpen={isDesignPanelOpen}
             onToggleDesignPanel={() => setIsDesignPanelOpen(!isDesignPanelOpen)}
+            externalInput={externalMessage}
+            onClearExternalInput={() => setExternalMessage(null)}
           />
         </div>
 
@@ -201,6 +206,7 @@ export default function App() {
                 onUpdateSettings={(analysisSettings) => {
                   setSettings(prev => ({ ...prev, analysis: analysisSettings }));
                 }}
+                onDiscussWithAI={(prompt) => setExternalMessage(prompt)}
               />
             </motion.div>
           )}

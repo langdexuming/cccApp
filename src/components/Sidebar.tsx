@@ -1,9 +1,9 @@
-import { Plus, MessageSquare, Search, Settings, User, GitBranch, Trash2, ChevronDown, Folder, Lightbulb, Sparkles, ChevronRight, Bot } from 'lucide-react';
+import { Plus, MessageSquare, Search, Settings, User, GitBranch, Trash2, ChevronDown, Folder, Lightbulb, Sparkles, ChevronRight, Bot, Monitor } from 'lucide-react';
 import { Chat } from '../types';
 import { cn } from '../lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { Pet } from './Pet';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 interface SidebarProps {
   chats: Chat[];
@@ -18,6 +18,18 @@ interface SidebarProps {
 
 export function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, isTyping, onOpenSettings, onOpenAnalyst }: SidebarProps) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [hostname, setHostname] = useState<string>('Local Machine');
+
+  useEffect(() => {
+    fetch('/api/system/info')
+      .then(res => res.json())
+      .then(data => {
+        if (data.hostname) setHostname(data.hostname);
+      })
+      .catch(() => {
+        setHostname(window.location.hostname.split('.')[0] || 'Local Machine');
+      });
+  }, []);
 
   const groupedChats = useMemo(() => {
     const groups: Record<string, Chat[]> = {};
@@ -133,12 +145,12 @@ export function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDelete
         </button>
         
         <div className="pt-4 flex items-center gap-3 px-3 py-2 border-t border-zinc-100 mt-2">
-          <div className="w-8 h-8 rounded-full bg-accent-theme flex items-center justify-center font-bold text-xs text-white shadow-sm">
-            JD
+          <div className="w-8 h-8 rounded-xl bg-orange-500 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform">
+            <Sparkles className="w-5 h-5 text-white animate-pulse" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold text-text-primary truncate">Jane Doe</div>
-            <div className="text-[10px] text-text-secondary font-medium truncate uppercase tracking-tighter">Pro Plan</div>
+            <div className="text-sm font-bold text-text-primary truncate">{hostname}</div>
+            <div className="text-[10px] text-accent-theme font-bold truncate uppercase tracking-tighter">天才程序员</div>
           </div>
         </div>
       </div>

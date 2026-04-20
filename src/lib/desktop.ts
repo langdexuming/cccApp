@@ -108,3 +108,17 @@ export async function requestGitSync(
   }
   return invokeCommand<GitSyncResponse>('git_sync', {payload});
 }
+
+export async function checkDesktopUpdate() {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  try {
+    const { check } = await import('@tauri-apps/plugin-updater');
+    const update = await check();
+    return update;
+  } catch (error) {
+    console.error('Failed to check for updates:', error);
+    return null;
+  }
+}

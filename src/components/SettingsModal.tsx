@@ -1,14 +1,14 @@
-﻿import {useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {AnimatePresence, motion} from 'motion/react';
-import {Bot, CheckCircle2, Cpu, FolderInput, GitBranch, Globe, Info, Key, Plus, RefreshCw, Save, Shield, Sparkles, Trash2, Users, X} from 'lucide-react';
+import {Bot, CheckCircle2, Cpu, Download, FolderInput, GitBranch, Globe, Info, Info as InfoIcon, Key, Plus, RefreshCw, Save, Shield, Sparkles, Trash2, Users, X} from 'lucide-react';
 import type {AppSettings, ProviderConfig, ProviderType} from '../types';
 import {DEFAULT_SETTINGS} from '../constants';
 import {cn} from '../lib/utils';
 import {fetchLocalToolConfig, mergeLocalToolConfigIntoSettings} from '../lib/mergeLocalToolConfig';
-import {fetchRemoteProviderModels, requestGitSync} from '../lib/desktop';
+import {fetchRemoteProviderModels, requestGitSync, checkDesktopUpdate, isTauriRuntime} from '../lib/desktop';
 import {BUILTIN_PROVIDER_MODELS} from '../lib/providerCatalog';
 
-type SettingsTab = ProviderType | 'collaboration' | 'git' | 'analysis';
+type SettingsTab = ProviderType | 'collaboration' | 'git' | 'analysis' | 'system';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -174,9 +174,94 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
               <button onClick={() => setActiveTab('collaboration')} className={cn('rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-all', activeTab === 'collaboration' ? 'bg-white text-accent-theme shadow-sm border border-border-theme' : 'text-text-secondary hover:bg-zinc-100 hover:text-text-primary')}><Users className="mr-2 inline h-4 w-4" />多代理协同</button>
               <button onClick={() => setActiveTab('analysis')} className={cn('rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-all', activeTab === 'analysis' ? 'bg-white text-accent-theme shadow-sm border border-border-theme' : 'text-text-secondary hover:bg-zinc-100 hover:text-text-primary')}><Sparkles className="mr-2 inline h-4 w-4" />项目分析</button>
               <button onClick={() => setActiveTab('git')} className={cn('rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-all', activeTab === 'git' ? 'bg-white text-accent-theme shadow-sm border border-border-theme' : 'text-text-secondary hover:bg-zinc-100 hover:text-text-primary')}><GitBranch className="mr-2 inline h-4 w-4" />Git 管理</button>
+              <button onClick={() => setActiveTab('system')} className={cn('rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-all', activeTab === 'system' ? 'bg-white text-accent-theme shadow-sm border border-border-theme' : 'text-text-secondary hover:bg-zinc-100 hover:text-text-primary')}><InfoIcon className="mr-2 inline h-4 w-4" />系统与更新</button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-8">
-              {activeTab === 'analysis' ? (
+              {activeTab === 'system' ? (
+                <div className="space-y-8">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-lg font-bold text-text-primary">系统与更新</h3>
+                      <p className="text-sm text-text-secondary mt-1">管理应用版本、更新偏好及系统诊断。</p>
+                    </div>
+                    <div className="p-3 bg-zinc-100 rounded-2xl">
+                      <InfoIcon className="h-6 w-6 text-text-secondary" />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-6">
+                    <div className="p-6 rounded-3xl border border-border-theme bg-zinc-50/30 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white rounded-xl border border-border-theme shadow-sm text-accent-theme">
+                            <Sparkles className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-bold text-text-primary">应用版本</div>
+                            <div className="text-xs text-text-secondary mt-0.5">当前已安装：v1.0.0</div>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={async (e) => {
+                             const btn = e.currentTarget;
+                             btn.disabled = true;
+                             btn.textContent = '正在检查...';
+                             try {
+                               if (isTauriRuntime()) {
+                                 const update = await checkDesktopUpdate();
+                                 if (update?.available) {
+                                   alert(`发现新版本 v${update.version}！请关闭此窗口并查看顶部更新提醒。`);
+                                 } else {
+                                   alert('已经是最新版本');
+                                 }
+                               } else {
+                                  // Mock web check
+                                  await new Promise(r => setTimeout(r, 1500));
+                                  alert('已经是最新版本');
+                               }
+                             } finally {
+                               btn.disabled = false;
+                               btn.textContent = '立即检查更新';
+                             }
+                          }}
+                          className="px-4 py-1.5 bg-white border border-border-theme rounded-xl text-[11px] font-bold hover:shadow-md transition-all flex items-center gap-2"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          立即检查更新
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-6 rounded-3xl border border-border-theme bg-zinc-50/30">
+                       <div className="flex items-start gap-4">
+                          <div className="p-2 bg-white rounded-xl border border-border-theme text-zinc-400">
+                             <Shield className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1">
+                             <div className="text-sm font-bold text-text-primary">隐私与安全</div>
+                             <p className="text-[11px] text-text-secondary mt-1 leading-relaxed">
+                               所有 API Key 和对话记录均保存在本地存储中。应用不会上传您的个人配置至任何云端服务器（除了您选择的 AI 服务商）。
+                             </p>
+                          </div>
+                       </div>
+                    </div>
+
+                    <div className="p-6 rounded-3xl border border-border-theme bg-zinc-50/30">
+                       <div className="flex items-start gap-4">
+                          <div className="p-2 bg-white rounded-xl border border-border-theme text-zinc-400">
+                             <Globe className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1">
+                             <div className="text-sm font-bold text-text-primary">运行环境</div>
+                             <div className="mt-2 text-[11px] font-mono text-text-secondary bg-white p-2 rounded-lg border border-zinc-100">
+                               Platform: {isTauriRuntime() ? 'Desktop (Tauri)' : 'Web (Browser)'}
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+                </div>
+              ) : activeTab === 'analysis' ? (
                 <div className="space-y-8">
                   <div className="flex items-start justify-between">
                     <div>

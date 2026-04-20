@@ -43,6 +43,8 @@ interface ChatInterfaceProps {
   onOpenSettings: () => void;
   isDesignPanelOpen: boolean;
   onToggleDesignPanel: () => void;
+  externalInput?: string | null;
+  onClearExternalInput?: () => void;
 }
 
 export function ChatInterface({ 
@@ -59,7 +61,9 @@ export function ChatInterface({
   onUpdateSettings,
   onOpenSettings,
   isDesignPanelOpen,
-  onToggleDesignPanel
+  onToggleDesignPanel,
+  externalInput,
+  onClearExternalInput
 }: ChatInterfaceProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -209,6 +213,22 @@ export function ChatInterface({
   useEffect(() => {
     scrollToBottom();
   }, [chat?.messages, isLoading]);
+
+  useEffect(() => {
+    if (externalInput) {
+      setInput(externalInput);
+      onClearExternalInput?.();
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+          }
+        }, 0);
+      }
+    }
+  }, [externalInput, onClearExternalInput]);
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;

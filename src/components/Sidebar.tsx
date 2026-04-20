@@ -1,9 +1,10 @@
-import { Plus, MessageSquare, Search, Settings, User, GitBranch, Trash2, ChevronDown, Folder, Lightbulb, Sparkles, ChevronRight, Bot, Monitor } from 'lucide-react';
+import { Plus, MessageSquare, Settings, Trash2, ChevronRight, Bot, Sparkles } from 'lucide-react';
 import { Chat } from '../types';
 import { cn } from '../lib/utils';
 import { formatDistanceToNow } from 'date-fns';
-import { Pet } from './Pet';
 import { useState, useMemo, useEffect } from 'react';
+import { openWorkspacePath } from '../lib/desktop';
+import { looksLikeWorkspacePath, workspaceGroupLabel, workspaceTooltip } from '../lib/workspace';
 
 interface SidebarProps {
   chats: Chat[];
@@ -16,15 +17,27 @@ interface SidebarProps {
   onOpenAnalyst?: () => void;
 }
 
-export function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, isTyping, onOpenSettings, onOpenAnalyst }: SidebarProps) {
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+const UNGROUPED_LABEL = '本地 / 未分组';
+
+export function Sidebar({
+  chats,
+  activeChatId,
+  onSelectChat,
+  onNewChat,
+  onDeleteChat,
+  isTyping,
+  onOpenSettings,
+  onOpenAnalyst,
+}: SidebarProps) {
   const [hostname, setHostname] = useState<string>('Local Machine');
 
   useEffect(() => {
     fetch('/api/system/info')
-      .then(res => res.json())
-      .then(data => {
-        if (data.hostname) setHostname(data.hostname);
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.hostname) {
+          setHostname(data.hostname);
+        }
       })
       .catch(() => {
         setHostname(window.location.hostname.split('.')[0] || 'Local Machine');
@@ -33,29 +46,21 @@ export function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDelete
 
   const groupedChats = useMemo(() => {
     const groups: Record<string, Chat[]> = {};
-    
-    chats.forEach(chat => {
-      const workspace = chat.workspace || '本地 / 未分组';
-      if (!groups[workspace]) {
-        groups[workspace] = [];
+
+    chats.forEach((chat) => {
+      const workspaceKey = (chat.workspace || '').trim() || UNGROUPED_LABEL;
+      if (!groups[workspaceKey]) {
+        groups[workspaceKey] = [];
       }
-      groups[workspace].push(chat);
+      groups[workspaceKey].push(chat);
     });
 
-    // Sort chats within each group
-    Object.keys(groups).forEach(key => {
+    Object.keys(groups).forEach((key) => {
       groups[key].sort((a, b) => b.updatedAt - a.updatedAt);
     });
 
     return groups;
   }, [chats]);
-
-  const toggleGroup = (group: string) => {
-    setExpandedGroups(prev => ({
-      ...prev,
-      [group]: prev[group] === false ? true : false
-    }));
-  };
 
   return (
     <div className="w-[280px] h-full bg-bg-sidebar border-r border-border-theme flex flex-col">
@@ -79,54 +84,74 @@ export function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDelete
             <p className="text-xs text-text-secondary font-medium">暂无历史记录</p>
           </div>
         ) : (
-          Object.entries(groupedChats).sort(([a], [b]) => a === '本地 / 未分组' ? 1 : b === '本地 / 未分组' ? -1 : a.localeCompare(b)).map(([workspace, groupChats]) => (
-            <div key={workspace} className="space-y-1">
-              <div className="px-2 py-1 text-[10px] font-bold text-text-secondary uppercase tracking-widest flex items-center gap-2">
-                <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                {workspace}
-              </div>
-              
-              <div className="space-y-0.5">
-                {groupChats.map((chat) => (
-                  <div key={chat.id} className="relative group">
+          Object.entries(groupedChats)
+            .sort(([a], [b]) =>
+              a === UNGROUPED_LABEL ? 1 : b === UNGROUPED_LABEL ? -1 : a.localeCompare(b),
+            )
+            .map(([workspace, groupChats]) => (
+              <div key={workspace} className="space-y-1">
+                <div
+                  className="px-2 py-1 text-[10px] font-bold text-text-secondary uppercase tracking-widest flex items-center gap-2"
+                  title={workspaceTooltip(workspace)}
+                >
+                  <span className="w-1 h-1 rounded-full bg-zinc-300" />
+                  <span className="truncate flex-1">{workspaceGroupLabel(workspace)}</span>
+                  {looksLikeWorkspacePath(workspace) ? (
                     <button
-                      onClick={() => onSelectChat(chat.id)}
-                      className={cn(
-                        "w-full text-left px-3 py-2.5 rounded-xl flex flex-col gap-0.5 transition-all",
-                        activeChatId === chat.id
-                          ? "bg-white shadow-sm border border-border-theme"
-                          : "hover:bg-zinc-200/50 border border-transparent"
-                      )}
-                    >
-                      <div className="text-[14px] font-medium text-text-primary truncate pr-5">
-                        {chat.title}
-                      </div>
-                      <div className="text-[10px] text-zinc-400 font-medium tracking-tight">
-                        {formatDistanceToNow(chat.updatedAt, { addSuffix: true })}
-                      </div>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm('确定要删除这个对话吗？')) {
-                          onDeleteChat(chat.id);
-                        }
+                      type="button"
+                      onClick={() => {
+                        void openWorkspacePath(workspace).catch(() => {});
                       }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                      title="删除"
+                      className="rounded px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal hover:bg-white"
+                      title="打开工作区"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      打开
                     </button>
-                  </div>
-                ))}
+                  ) : null}
+                </div>
+
+                <div className="space-y-0.5">
+                  {groupChats.map((chat) => (
+                    <div key={chat.id} className="relative group">
+                      <button
+                        onClick={() => onSelectChat(chat.id)}
+                        className={cn(
+                          'w-full text-left px-3 py-2.5 rounded-xl flex flex-col gap-0.5 transition-all',
+                          activeChatId === chat.id
+                            ? 'bg-white shadow-sm border border-border-theme'
+                            : 'hover:bg-zinc-200/50 border border-transparent',
+                        )}
+                        title={chat.workspace || undefined}
+                      >
+                        <div className="text-[14px] font-medium text-text-primary truncate pr-5">
+                          {chat.title}
+                        </div>
+                        <div className="text-[10px] text-zinc-400 font-medium tracking-tight">
+                          {formatDistanceToNow(chat.updatedAt, { addSuffix: true })}
+                        </div>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm('确定要删除这个对话吗？')) {
+                            onDeleteChat(chat.id);
+                          }
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                        title="删除"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))
+            ))
         )}
       </div>
 
       <div className="p-4 border-t border-border-theme space-y-1">
-        <button 
+        <button
           onClick={onOpenAnalyst}
           className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-bold text-text-secondary hover:bg-white hover:shadow-sm rounded-xl transition-all group"
         >
@@ -136,21 +161,23 @@ export function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDelete
           </div>
           <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
         </button>
-        <button 
+        <button
           onClick={onOpenSettings}
           className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-bold text-text-secondary hover:bg-white hover:shadow-sm rounded-xl transition-all"
         >
           <Settings className="w-4 h-4" />
           系统设置
         </button>
-        
+
         <div className="pt-4 flex items-center gap-3 px-3 py-2 border-t border-zinc-100 mt-2">
           <div className="w-8 h-8 rounded-xl bg-orange-500 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform">
             <Sparkles className="w-5 h-5 text-white animate-pulse" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-text-primary truncate">{hostname}</div>
-            <div className="text-[10px] text-accent-theme font-bold truncate uppercase tracking-tighter">天才程序员</div>
+            <div className="text-[10px] text-accent-theme font-bold truncate uppercase tracking-tighter">
+              天才程序员
+            </div>
           </div>
         </div>
       </div>

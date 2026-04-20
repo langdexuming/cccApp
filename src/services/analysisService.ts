@@ -1,176 +1,282 @@
-import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
-import OpenAI from "openai";
-import { AnalysisProvider, ProjectInsight, ProviderConfig, AnalysisResult } from "../types";
+import {
+  applyProjectFixDesktop,
+  fetchKairosLogsDesktop,
+  generateProjectText,
+  isTauriRuntime,
+  readProjectContext,
+} from '../lib/desktop';
+import type {AnalysisProvider, AnalysisResult, ProjectInsight, ProviderConfig} from '../types';
+
+interface ProjectTreeNode {
+  name: string;
+  children?: ProjectTreeNode[];
+}
 
 interface ProjectContext {
-  tree: any;
-  files: Record<string, string>;
+  rootPath: string;
+  outline: string;
+  tree: ProjectTreeNode[];
+  dependencies: Record<string, string[]>;
+}
+
+const DEFAULT_RADAR = {
+  performance: 80,
+  security: 85,
+  maintainability: 75,
+  innovation: 70,
+  robustness: 80,
+};
+
+function ensureDesktopSupport() {
+  if (!isTauriRuntime()) {
+    throw new Error('项目分析当前仅支持桌面版。');
+  }
+}
+
+function normalizeProviderId(providerType: AnalysisProvider): string {
+  return providerType === 'vertex-ai' ? 'vertex_ai' : providerType;
+}
+
+function defaultModelForProvider(providerType: AnalysisProvider): string {
+  switch (providerType) {
+    case 'gemini':
+      return 'gemini-2.5-flash';
+    case 'openai':
+      return 'gpt-5.4';
+    case 'vertex-ai':
+      return 'gemini-2.5-flash';
+    default:
+      return 'default';
+  }
+}
+
+function activeModelForProvider(providerType: AnalysisProvider, config: ProviderConfig): string {
+  return config.models[0] || defaultModelForProvider(providerType);
+}
+
+function normalizeProviderConfig(providerType: AnalysisProvider, config: ProviderConfig): ProviderConfig {
+  return {
+    ...config,
+    id: normalizeProviderId(providerType) as ProviderConfig['id'],
+    models: config.models?.length ? [...config.models] : [defaultModelForProvider(providerType)],
+  };
+}
+
+async function getProjectContext(): Promise<ProjectContext> {
+  ensureDesktopSupport();
+  const payload = await readProjectContext({});
+  if (!payload) {
+    throw new Error('无法读取桌面端项目上下文。');
+  }
+  return {
+    rootPath: payload.rootPath,
+    outline: payload.outline,
+    tree: buildTreeFromOutline(payload.outline),
+    dependencies: {},
+  };
+}
+
+async function requestProjectText(
+  providerType: AnalysisProvider,
+  config: ProviderConfig,
+  prompt: string,
+): Promise<string> {
+  ensureDesktopSupport();
+  const text = await generateProjectText({
+    providerId: normalizeProviderId(providerType),
+    provider: normalizeProviderConfig(providerType, config),
+    activeModel: activeModelForProvider(providerType, config),
+    prompt,
+  });
+  if (text === null) {
+    throw new Error('桌面端项目分析请求未返回结果。');
+  }
+  return text;
+}
+
+function buildTreeFromOutline(outline: string): ProjectTreeNode[] {
+  const roots: ProjectTreeNode[] = [];
+  const directoryMap = new Map<string, ProjectTreeNode>();
+
+  const ensureDir = (parts: string[]): ProjectTreeNode[] => {
+    let currentChildren = roots;
+    let currentPath = '';
+    for (const part of parts) {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      let node = directoryMap.get(currentPath);
+      if (!node) {
+        node = {name: part, children: []};
+        directoryMap.set(currentPath, node);
+        currentChildren.push(node);
+      }
+      currentChildren = node.children!;
+    }
+    return currentChildren;
+  };
+
+  for (const rawLine of outline.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const dirMatch = line.match(/^\[dir\]\s+(.+?)\/$/);
+    if (dirMatch) {
+      const path = dirMatch[1].trim();
+      if (path && path !== '.') {
+        ensureDir(path.split('/').filter(Boolean));
+      }
+      continue;
+    }
+
+    const fileMatch = line.match(/^\[file\]\s+(.+?)\s+\(\d+\s+bytes\)$/);
+    if (!fileMatch) continue;
+
+    const path = fileMatch[1].trim();
+    const parts = path.split('/').filter(Boolean);
+    const name = parts.pop();
+    if (!name) continue;
+    const siblings = ensureDir(parts);
+    if (!siblings.some((item) => item.name === name && !item.children)) {
+      siblings.push({name});
+    }
+  }
+
+  return roots;
+}
+
+function stripCodeFence(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('```')) {
+    return trimmed;
+  }
+  const withoutStart = trimmed.replace(/^```[a-zA-Z0-9_-]*\s*/, '');
+  return withoutStart.replace(/\s*```$/, '').trim();
+}
+
+function extractJsonCandidate(raw: string): string {
+  const stripped = stripCodeFence(raw);
+  if (stripped.startsWith('{') || stripped.startsWith('[')) {
+    return stripped;
+  }
+
+  const objectStart = stripped.indexOf('{');
+  const objectEnd = stripped.lastIndexOf('}');
+  if (objectStart >= 0 && objectEnd > objectStart) {
+    return stripped.slice(objectStart, objectEnd + 1);
+  }
+
+  const arrayStart = stripped.indexOf('[');
+  const arrayEnd = stripped.lastIndexOf(']');
+  if (arrayStart >= 0 && arrayEnd > arrayStart) {
+    return stripped.slice(arrayStart, arrayEnd + 1);
+  }
+
+  return stripped;
+}
+
+function parseJsonResponse<T>(raw: string, fallback: T): T {
+  try {
+    return JSON.parse(extractJsonCandidate(raw)) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeInsightArray(items: unknown): ProjectInsight[] {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items
+    .map((item, index) => {
+      const row = item as Record<string, unknown>;
+      const category: ProjectInsight['category'] =
+        row.category === 'architecture' ||
+        row.category === 'performance' ||
+        row.category === 'security' ||
+        row.category === 'trends'
+          ? row.category
+          : 'architecture';
+      const priority: ProjectInsight['priority'] =
+        row.priority === 'low' || row.priority === 'medium' || row.priority === 'high'
+          ? row.priority
+          : 'medium';
+      return {
+        id: typeof row.id === 'string' && row.id.trim() ? row.id : `insight-${index + 1}`,
+        category,
+        title: typeof row.title === 'string' ? row.title : '未命名建议',
+        description: typeof row.description === 'string' ? row.description : '',
+        suggestion: typeof row.suggestion === 'string' ? row.suggestion : '',
+        priority,
+        hasFix: Boolean(row.hasFix),
+      };
+    })
+    .filter((item) => item.title.trim());
 }
 
 export async function getProjectInsights(
   providerType: AnalysisProvider,
-  config: ProviderConfig
+  config: ProviderConfig,
 ): Promise<AnalysisResult> {
-  const defaultRadar = { performance: 80, security: 85, maintainability: 75, innovation: 70, robustness: 80 };
-  
   try {
-    // 1. Gather project context from our new API
-    const contextRes = await fetch('/api/project/analyze');
-    if (!contextRes.ok) throw new Error('Failed to fetch project context');
-    const context: ProjectContext = await contextRes.json();
-
+    const context = await getProjectContext();
     const prompt = `
-      You are an expert full-stack architect and technology trend analyst. 
-      Analyze the following project structure and key file contents.
-      
-      File Tree:
-      ${JSON.stringify(context.tree, null, 2)}
-      
-      Key Files:
-      ${Object.entries(context.files).map(([name, content]) => `--- ${name} ---\n${content}`).join('\n\n')}
-      
-      Provide a comprehensive JSON analysis. IMPORTANT: All descriptions, titles, and suggestions MUST be in Chinese (Simplified).
-      1. insights: 5-8 highly specific, actionable advice.
-      2. radar: scores (0-100) for performance, security, maintainability, innovation, robustness.
-      3. summary: a brief (1-sentence) technical summary of the project.
-      
-      Response JSON structure:
-      {
-        "insights": [
-          {
-            "id": "slug",
-            "category": "architecture" | "performance" | "security" | "trends",
-            "title": "...",
-            "description": "...",
-            "suggestion": "...",
-            "priority": "low" | "medium" | "high",
-            "hasFix": boolean
-          }
-        ],
-        "radar": {
-          "performance": number,
-          "security": number,
-          "maintainability": number,
-          "innovation": number,
-          "robustness": number
-        },
-        "summary": "..."
-      }
-    `;
+你是一名资深全栈架构师和技术趋势分析师。请基于下面的项目扫描摘要，输出严格 JSON。
 
-    const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
+要求：
+1. 所有 title、description、suggestion、summary 都必须使用简体中文。
+2. insights 提供 5-8 条具体、可执行的建议。
+3. radar 为 0-100 分。
+4. 不要输出任何 JSON 之外的解释。
 
-    if (providerType === 'vertex-ai') {
-      const response = await fetch('/api/vertex/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: config.projectId,
-          location: config.baseUrl || 'us-central1',
-          model: config.models[0] || "gemini-1.5-flash",
-          apiKey: config.apiKey,
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-      if (!response.ok) throw new Error('Vertex AI request failed');
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      const parsed = JSON.parse(text || '{}');
-      return {
-        insights: parsed.insights || [],
-        radar: parsed.radar || defaultRadar,
-        context: { 
-          tree: context.tree, 
-          summary: parsed.summary || '已通过 Vertex AI 成功扫描项目。',
-          dependencies: (context as any).dependencies 
-        }
-      };
+返回结构：
+{
+  "insights": [
+    {
+      "id": "slug",
+      "category": "architecture" | "performance" | "security" | "trends",
+      "title": "建议标题",
+      "description": "问题描述",
+      "suggestion": "改进建议",
+      "priority": "low" | "medium" | "high",
+      "hasFix": true
     }
+  ],
+  "radar": {
+    "performance": 0,
+    "security": 0,
+    "maintainability": 0,
+    "innovation": 0,
+    "robustness": 0
+  },
+  "summary": "一句话摘要"
+}
 
-    if (providerType === 'gemini') {
-      // @ts-ignore
-      const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
-      const response = await ai.models.generateContent({
-        model: config.models[0] || "gemini-3-flash-preview",
-        contents: prompt,
-        // @ts-ignore
-        tools: [{ googleSearch: {} }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              insights: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    category: { type: Type.STRING },
-                    title: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    suggestion: { type: Type.STRING },
-                    priority: { type: Type.STRING },
-                    hasFix: { type: Type.BOOLEAN }
-                  },
-                  required: ['id', 'category', 'title', 'description', 'suggestion', 'priority', 'hasFix']
-                }
-              },
-              radar: {
-                type: Type.OBJECT,
-                properties: {
-                  performance: { type: Type.NUMBER },
-                  security: { type: Type.NUMBER },
-                  maintainability: { type: Type.NUMBER },
-                  innovation: { type: Type.NUMBER },
-                  robustness: { type: Type.NUMBER }
-                },
-                required: ['performance', 'security', 'maintainability', 'innovation', 'robustness']
-              },
-              summary: { type: Type.STRING }
-            },
-            required: ['insights', 'radar', 'summary']
-          }
-        }
-      });
+项目根目录：${context.rootPath}
+项目扫描摘要：
+${context.outline}
+`;
 
-      const text = response.text;
-      const parsed = JSON.parse(text || '{}');
-      return {
-        insights: parsed.insights || [],
-        radar: parsed.radar || defaultRadar,
-        context: { 
-          tree: context.tree, 
-          summary: parsed.summary || '已进行项目扫描。',
-          dependencies: (context as any).dependencies 
-        }
-      };
-    } else {
-      const openai = new OpenAI({ apiKey, baseURL: config.baseUrl, dangerouslyAllowBrowser: true });
-      const response = await openai.chat.completions.create({
-        model: config.models[0] || "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
-      });
+    const raw = await requestProjectText(providerType, config, prompt);
+    const parsed = parseJsonResponse<{
+      insights?: unknown;
+      radar?: Partial<typeof DEFAULT_RADAR>;
+      summary?: string;
+    }>(raw, {});
 
-      const text = response.choices[0].message.content;
-      const parsed = JSON.parse(text || '{}');
-      return {
-        insights: parsed.insights || [],
-        radar: parsed.radar || defaultRadar,
-        context: { 
-          tree: context.tree, 
-          summary: parsed.summary || '已通过 OpenAI 成功进行深度扫描。',
-          dependencies: (context as any).dependencies
-        }
-      };
-    }
+    return {
+      insights: normalizeInsightArray(parsed.insights),
+      radar: {...DEFAULT_RADAR, ...(parsed.radar || {})},
+      context: {
+        tree: context.tree,
+        summary: parsed.summary?.trim() || '已完成项目结构扫描。',
+        dependencies: context.dependencies,
+      },
+    };
   } catch (error) {
     console.error('Project Analysis Error:', error);
     return {
       insights: [],
-      radar: defaultRadar,
-      context: { tree: [], summary: '分析失败，请检查配置。' }
+      radar: DEFAULT_RADAR,
+      context: {tree: [], summary: '分析失败，请检查桌面端模型配置。'},
     };
   }
 }
@@ -178,81 +284,42 @@ export async function getProjectInsights(
 export async function getInsightFix(
   providerType: AnalysisProvider,
   config: ProviderConfig,
-  insight: ProjectInsight
-): Promise<{ file: string; patch: string; explanation: string } | null> {
+  insight: ProjectInsight,
+): Promise<{file: string; patch: string; explanation: string} | null> {
   try {
-    const contextRes = await fetch('/api/project/analyze');
-    const context: ProjectContext = await contextRes.json();
-
+    const context = await getProjectContext();
     const prompt = `
-      You are an expert full-stack engineer. 
-      Insight: ${insight.title} - ${insight.suggestion}
-      Category: ${insight.category}
+你是一名资深全栈工程师。请根据下面这条分析建议，给出一个可直接落地的修复方案，并严格返回 JSON。
 
-      Provide a specific code fix for this insight based on the project context.
-      IMPORTANT: The explanation MUST be in Chinese (Simplified).
-      
-      File Tree:
-      ${JSON.stringify(context.tree, null, 2)}
+要求：
+1. explanation 必须使用简体中文。
+2. file 返回相对于项目根目录的路径。
+3. patch 返回文件完整内容，优先返回完整文件而不是 diff。
+4. 不要输出任何 JSON 之外的解释。
 
-      Response format (JSON):
-      {
-        "file": "path/to/file.ts",
-        "patch": "Complete new content of the file OR a markdown code block showing the change",
-        "explanation": "Briefly explain what you changed and why"
-      }
-    `;
+建议标题：${insight.title}
+问题描述：${insight.description}
+修复建议：${insight.suggestion}
+项目扫描摘要：
+${context.outline}
 
-    const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
-
-    if (providerType === 'vertex-ai') {
-      const response = await fetch('/api/vertex/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: config.projectId,
-          location: config.baseUrl || 'us-central1',
-          model: config.models[0] || "gemini-1.5-flash",
-          apiKey: config.apiKey,
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      return text ? JSON.parse(text) : null;
+返回结构：
+{
+  "file": "src/example.ts",
+  "patch": "完整文件内容",
+  "explanation": "修改说明"
+}
+`;
+    const raw = await requestProjectText(providerType, config, prompt);
+    const parsed = parseJsonResponse<{file?: string; patch?: string; explanation?: string}>(raw, {});
+    if (!parsed.file || !parsed.patch) {
+      return null;
     }
-
-    if (providerType === 'gemini') {
-      // @ts-ignore
-      const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
-      const response = await ai.models.generateContent({
-        model: config.models[0] || "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              file: { type: Type.STRING },
-              patch: { type: Type.STRING },
-              explanation: { type: Type.STRING }
-            },
-            required: ['file', 'patch', 'explanation']
-          }
-        }
-      });
-      const text = response.text;
-      return text ? JSON.parse(text) : null;
-    } else {
-      const openai = new OpenAI({ apiKey, baseURL: config.baseUrl, dangerouslyAllowBrowser: true });
-      const response = await openai.chat.completions.create({
-        model: config.models[0] || "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
-      });
-      const text = response.choices[0].message.content;
-      return text ? JSON.parse(text) : null;
-    }
+    return {
+      file: parsed.file,
+      patch: parsed.patch,
+      explanation: parsed.explanation || '已生成修复建议。',
+    };
   } catch (error) {
     console.error('Insight Fix Error:', error);
     return null;
@@ -261,66 +328,27 @@ export async function getInsightFix(
 
 export async function generateProjectDocs(
   providerType: AnalysisProvider,
-  config: ProviderConfig
+  config: ProviderConfig,
 ): Promise<string> {
   try {
-    const contextRes = await fetch('/api/project/analyze');
-    const context: ProjectContext = await contextRes.json();
-
+    const context = await getProjectContext();
     const prompt = `
-      You are an expert technical writer and architect.
-      Based on the following project context, generate a professional ARCHITECTURE.md document.
-      IMPORTANT: The entire document MUST be written in Chinese (Simplified).
-      
-      Include:
-      1. Project Overview
-      2. Key Technologies
-      3. Folder Structure Explanation
-      4. Main Logic Flow
-      5. Future Roadmap
-      
-      File Tree: ${JSON.stringify(context.tree, null, 2)}
-      
-      Respond only with the markdown content.
-    `;
+你是一名资深技术作者和系统架构师。请根据项目扫描摘要，生成一份完整的 ARCHITECTURE.md 内容。
 
-    const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
+要求：
+1. 全文使用简体中文。
+2. 使用 Markdown。
+3. 包含：项目概览、关键技术、目录结构说明、主要逻辑流、未来路线图。
+4. 只返回 Markdown 正文，不要附加解释。
 
-    if (providerType === 'vertex-ai') {
-      const response = await fetch('/api/vertex/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: config.projectId,
-          location: config.baseUrl || 'us-central1',
-          model: config.models[0] || "gemini-1.5-flash",
-          apiKey: config.apiKey,
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-      const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || "未能生成文档。";
-    }
-
-    if (providerType === 'gemini') {
-      // @ts-ignore
-      const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
-      const response = await ai.models.generateContent({
-        model: config.models[0] || "gemini-3-flash-preview",
-        contents: prompt
-      });
-      return response.text || "未能生成文档。";
-    } else {
-      const openai = new OpenAI({ apiKey, baseURL: config.baseUrl, dangerouslyAllowBrowser: true });
-      const response = await openai.chat.completions.create({
-        model: config.models[0] || "gpt-4o",
-        messages: [{ role: "user", content: prompt }]
-      });
-      return response.choices[0].message.content || "未能生成文档。";
-    }
+项目根目录：${context.rootPath}
+项目扫描摘要：
+${context.outline}
+`;
+    return (await requestProjectText(providerType, config, prompt)).trim();
   } catch (error) {
     console.error('Docs Generation Error:', error);
-    return "文档生成过程中出错。";
+    return '文档生成过程中出错。';
   }
 }
 
@@ -333,87 +361,33 @@ export interface PreflightCheck {
 
 export async function runPreflightChecks(
   providerType: AnalysisProvider,
-  config: ProviderConfig
+  config: ProviderConfig,
 ): Promise<PreflightCheck[]> {
   try {
-    const contextRes = await fetch('/api/project/analyze');
-    const context: ProjectContext = await contextRes.json();
-
+    const context = await getProjectContext();
     const prompt = `
-      You are a DevSecOps expert. Perform a "Pre-flight" check on this project before it goes to production.
-      IMPORTANT: All status messages and check names MUST be in Chinese (Simplified).
-      
-      Scan for:
-      1. Missing .env.example or clear env requirements.
-      2. Potential secret leaks (API keys, hardcoded secrets) in the files provided.
-      3. Build script logic in package.json.
-      4. Standard security headers or practices if applicable.
-      
-      File Tree: ${JSON.stringify(context.tree, null, 2)}
-      Key Files: ${Object.keys(context.files).join(', ')}
+你是一名 DevSecOps 专家。请基于项目扫描摘要，做一次上线前预检，并严格返回 JSON 数组。
 
-      Respond with a JSON array of:
-      {
-        "id": "slug",
-        "name": "Check name",
-        "status": "pass" | "fail" | "warning",
-        "message": "Detailed result"
-      }
-    `;
+要求：
+1. 所有 message 使用简体中文。
+2. 检查项至少覆盖：环境变量说明、潜在密钥泄露、构建脚本、上线安全实践。
+3. 不要输出任何数组之外的解释。
 
-    const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
+返回结构：
+[
+  {
+    "id": "env-example",
+    "name": "检查名称",
+    "status": "pass" | "fail" | "warning",
+    "message": "详细结果"
+  }
+]
 
-    if (providerType === 'vertex-ai') {
-      const response = await fetch('/api/vertex/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: config.projectId,
-          location: config.baseUrl || 'us-central1',
-          model: config.models[0] || "gemini-1.5-flash",
-          apiKey: config.apiKey,
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-      const data = await response.json();
-      return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
-    }
-
-    if (providerType === 'gemini') {
-      // @ts-ignore
-      const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
-      const response = await ai.models.generateContent({
-        model: config.models[0] || "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                name: { type: Type.STRING },
-                status: { type: Type.STRING },
-                message: { type: Type.STRING }
-              },
-              required: ['id', 'name', 'status', 'message']
-            }
-          }
-        }
-      });
-      return JSON.parse(response.text || "[]");
-    } else {
-      const openai = new OpenAI({ apiKey, baseURL: config.baseUrl, dangerouslyAllowBrowser: true });
-      const response = await openai.chat.completions.create({
-        model: config.models[0] || "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
-      });
-      const text = response.choices[0].message.content || '{"checks":[]}';
-      const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? parsed : (parsed.checks || []);
-    }
+项目扫描摘要：
+${context.outline}
+`;
+    const raw = await requestProjectText(providerType, config, prompt);
+    return parseJsonResponse<PreflightCheck[]>(raw, []).filter(Boolean);
   } catch (error) {
     console.error('Preflight Error:', error);
     return [];
@@ -429,84 +403,39 @@ export interface DeploymentFile {
 export async function generateDeploymentConfig(
   providerType: AnalysisProvider,
   config: ProviderConfig,
-  type: 'docker' | 'github-actions'
+  type: 'docker' | 'github-actions',
 ): Promise<DeploymentFile[]> {
   try {
-    const contextRes = await fetch('/api/project/analyze');
-    const context: ProjectContext = await contextRes.json();
-
+    const context = await getProjectContext();
+    const requestLabel =
+      type === 'docker'
+        ? '容器化部署（Dockerfile 与 docker-compose.yml）'
+        : 'CI/CD 流水线（GitHub Actions 工作流）';
     const prompt = `
-      You are a Cloud Infrastructure Expert. 
-      Generate production-ready deployment configuration files for this project.
-      
-      Project Overview:
-      - File Tree: ${JSON.stringify(context.tree, null, 2)}
-      - Technical Summary: Based on files like package.json, vite.config.ts, server.ts etc.
+你是一名云基础设施专家。请基于项目扫描摘要，为当前项目生成生产可用的部署配置，并严格返回 JSON 数组。
 
-      Request Type: ${type === 'docker' ? 'Containerization (Dockerfile & docker-compose.yml)' : 'CI/CD (GitHub Actions workflow)'}
+要求：
+1. content 为完整文件内容。
+2. language 返回合适的代码语言标识，如 dockerfile、yaml、bash。
+3. 不要输出数组之外的解释。
 
-      Respond with a JSON array of files:
-      [
-        {
-          "name": "filename",
-          "content": "file content",
-          "language": "language-slug"
-        }
-      ]
-    `;
+请求类型：${requestLabel}
+项目扫描摘要：
+${context.outline}
 
-    const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
-
-    if (providerType === 'vertex-ai') {
-      const response = await fetch('/api/vertex/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: config.projectId,
-          location: config.baseUrl || 'us-central1',
-          model: config.models[0] || "gemini-1.5-flash",
-          apiKey: config.apiKey,
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-      const data = await response.json();
-      return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
-    }
-
-    if (providerType === 'gemini') {
-      // @ts-ignore
-      const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
-      const response = await ai.models.generateContent({
-        model: config.models[0] || "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                content: { type: Type.STRING },
-                language: { type: Type.STRING }
-              },
-              required: ['name', 'content', 'language']
-            }
-          }
-        }
-      });
-      return JSON.parse(response.text || "[]");
-    } else {
-      const openai = new OpenAI({ apiKey, baseURL: config.baseUrl, dangerouslyAllowBrowser: true });
-      const response = await openai.chat.completions.create({
-        model: config.models[0] || "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
-      });
-      const text = response.choices[0].message.content || '{"files":[]}';
-      const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? parsed : (parsed.files || []);
-    }
+返回结构：
+[
+  {
+    "name": "filename",
+    "content": "完整文件内容",
+    "language": "language-slug"
+  }
+]
+`;
+    const raw = await requestProjectText(providerType, config, prompt);
+    return parseJsonResponse<DeploymentFile[]>(raw, []).filter(
+      (item) => !!item?.name && !!item?.content,
+    );
   } catch (error) {
     console.error('Deployment Generation Error:', error);
     return [];
@@ -523,86 +452,34 @@ export interface RoadmapItem {
 
 export async function getProjectRoadmap(
   providerType: AnalysisProvider,
-  config: ProviderConfig
+  config: ProviderConfig,
 ): Promise<RoadmapItem[]> {
   try {
-    const contextRes = await fetch('/api/project/analyze');
-    const context: ProjectContext = await contextRes.json();
-
+    const context = await getProjectContext();
     const prompt = `
-      You are a Strategic Tech Lead. 
-      Analyze the project and suggest a technical roadmap for the next 3-6 months.
-      IMPORTANT: All titles and descriptions MUST be in Chinese (Simplified).
-      
-      File Tree: ${JSON.stringify(context.tree, null, 2)}
-      
-      Provide 5-7 meaningful milestones.
-      Response JSON structure:
-      [
-        {
-          "id": "slug",
-          "title": "...",
-          "description": "...",
-          "milestone": "Q2 2024" | "Core Phase" etc,
-          "priority": "low" | "medium" | "high"
-        }
-      ]
-    `;
+你是一名战略技术负责人。请基于项目扫描摘要，给出未来 3-6 个月的技术路线图，并严格返回 JSON 数组。
 
-    const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
+要求：
+1. 所有字段内容使用简体中文。
+2. 输出 5-7 个里程碑。
+3. 不要输出数组之外的解释。
 
-    if (providerType === 'vertex-ai') {
-      const response = await fetch('/api/vertex/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: config.projectId,
-          location: config.baseUrl || 'us-central1',
-          model: config.models[0] || "gemini-1.5-flash",
-          apiKey: config.apiKey,
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-      const data = await response.json();
-      return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
-    }
+返回结构：
+[
+  {
+    "id": "slug",
+    "title": "里程碑标题",
+    "description": "说明",
+    "milestone": "阶段或季度",
+    "priority": "low" | "medium" | "high"
+  }
+]
 
-    if (providerType === 'gemini') {
-      // @ts-ignore
-      const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
-      const response = await ai.models.generateContent({
-        model: config.models[0] || "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                title: { type: Type.STRING },
-                description: { type: Type.STRING },
-                milestone: { type: Type.STRING },
-                priority: { type: Type.STRING }
-              },
-              required: ['id', 'title', 'description', 'milestone', 'priority']
-            }
-          }
-        }
-      });
-      return JSON.parse(response.text || "[]");
-    } else {
-      const openai = new OpenAI({ apiKey, baseURL: config.baseUrl, dangerouslyAllowBrowser: true });
-      const response = await openai.chat.completions.create({
-        model: config.models[0] || "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
-      });
-      const text = response.choices[0].message.content || '{"items":[]}';
-      const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? parsed : (parsed.items || []);
-    }
+项目扫描摘要：
+${context.outline}
+`;
+    const raw = await requestProjectText(providerType, config, prompt);
+    return parseJsonResponse<RoadmapItem[]>(raw, []).filter((item) => !!item?.title);
   } catch (error) {
     console.error('Roadmap Error:', error);
     return [];
@@ -610,16 +487,12 @@ export async function getProjectRoadmap(
 }
 
 export async function applyInsightFix(file: string, content: string) {
-  const res = await fetch('/api/project/apply-fix', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ file, content })
-  });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Failed to apply fix');
+  ensureDesktopSupport();
+  const result = await applyProjectFixDesktop({file, content});
+  if (!result) {
+    throw new Error('桌面端未返回修复落地结果。');
   }
-  return res.json();
+  return result;
 }
 
 export interface ProjectDream {
@@ -627,102 +500,49 @@ export interface ProjectDream {
   topic: string;
   vision: string;
   impact: string;
-  probability: number; // 0-100
+  probability: number;
 }
 
 export async function getProjectDreams(
   providerType: AnalysisProvider,
-  config: ProviderConfig
+  config: ProviderConfig,
 ): Promise<ProjectDream[]> {
   try {
-    const contextRes = await fetch('/api/project/analyze');
-    const context: ProjectContext = await contextRes.json();
-
+    const context = await getProjectContext();
     const prompt = `
-      You are a Visionary Futurist in Software Engineering. 
-      "Dream" about the potential of this project. Do not give standard advice.
-      Imagine radical technology shifts (e.g., decentralized storage, AI-agent self-writing logic, neural interfaces).
-      IMPORTANT: All topics, visions, and impacts MUST be in Chinese (Simplified).
-      
-      File Tree: ${JSON.stringify(context.tree, null, 2)}
-      
-      Provide 3-5 "Dreams".
-      Response JSON structure:
-      [
-        {
-          "id": "slug",
-          "topic": "The Dream Topic",
-          "vision": "A brief poetic description of the future shift",
-          "impact": "How it changes everything for this app",
-          "probability": 15 // Experimental low probability
-        }
-      ]
-    `;
+你是一名面向未来的软件技术思想家。请基于项目扫描摘要，提出 3-5 个非常规但有启发性的“技术梦想”，并严格返回 JSON 数组。
 
-    const apiKey = config.apiKey || (providerType === 'gemini' ? (process.env as any).GEMINI_API_KEY : '');
+要求：
+1. topic、vision、impact 使用简体中文。
+2. probability 为 0-100 的整数。
+3. 不要输出数组之外的解释。
 
-    if (providerType === 'vertex-ai') {
-      const response = await fetch('/api/vertex/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: config.projectId,
-          location: config.baseUrl || 'us-central1',
-          model: config.models[0] || "gemini-1.5-flash",
-          apiKey: config.apiKey,
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-      const data = await response.json();
-      return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
-    }
+返回结构：
+[
+  {
+    "id": "slug",
+    "topic": "梦想主题",
+    "vision": "未来愿景",
+    "impact": "对项目的颠覆性影响",
+    "probability": 15
+  }
+]
 
-    if (providerType === 'gemini') {
-      // @ts-ignore
-      const ai = new GoogleGenAI({ apiKey, baseUrl: config.baseUrl });
-      const response = await ai.models.generateContent({
-        model: config.models[0] || "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                topic: { type: Type.STRING },
-                vision: { type: Type.STRING },
-                impact: { type: Type.STRING },
-                probability: { type: Type.NUMBER }
-              },
-              required: ['id', 'topic', 'vision', 'impact', 'probability']
-            }
-          }
-        }
-      });
-      return JSON.parse(response.text || "[]");
-    } else {
-      const openai = new OpenAI({ apiKey, baseURL: config.baseUrl, dangerouslyAllowBrowser: true });
-      const response = await openai.chat.completions.create({
-        model: config.models[0] || "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
-      });
-      const text = response.choices[0].message.content || '{"dreams":[]}';
-      const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? parsed : (parsed.dreams || []);
-    }
-  } catch (error) {
+项目扫描摘要：
+${context.outline}
+`;
+    const raw = await requestProjectText(providerType, config, prompt);
+    return parseJsonResponse<ProjectDream[]>(raw, []).filter((item) => !!item?.topic);
+  } catch {
     return [];
   }
 }
 
 export interface CoordinatorPlan {
-  research: { task: string; insight: string };
-  synthesis: { task: string; insight: string };
-  implementation: { task: string; insight: string };
-  verification: { task: string; insight: string };
+  research: {task: string; insight: string};
+  synthesis: {task: string; insight: string};
+  implementation: {task: string; insight: string};
+  verification: {task: string; insight: string};
 }
 
 export interface KairosLog {
@@ -731,88 +551,73 @@ export interface KairosLog {
   type: string;
 }
 
-export async function getCoordinatorPlan(provider: AnalysisProvider, config: any, userGoal: string): Promise<CoordinatorPlan> {
-  const prompt = `你现在是 "Coordinator Mode" 多智能体协调员。
-用户的宏伟目标是：${userGoal}
-
-请按照以下四个阶段拆解这个复杂任务：
-1. Research (研究): 探索现状、竞品与技术栈。
-2. Synthesis (综合): 将研究结果转化为具体的架构决策与逻辑计划。
-3. Implementation (实施): 编写核心代码、组件或服务的具体步骤。
-4. Verification (验证): 定义测试用例、边缘情况检查与性能基准。
-
-请以 JSON 格式返回，结构如下：
-{
-  "research": { "task": "...", "insight": "..." },
-  "synthesis": { "task": "...", "insight": "..." },
-  "implementation": { "task": "...", "insight": "..." },
-  "verification": { "task": "...", "insight": "..." }
-}
-务必只返回 JSON。`;
+export async function getCoordinatorPlan(
+  provider: AnalysisProvider,
+  config: ProviderConfig,
+  userGoal: string,
+): Promise<CoordinatorPlan> {
+  const fallback: CoordinatorPlan = {
+    research: {task: '无法分析', insight: '研究阶段未能完成'},
+    synthesis: {task: '无法综合', insight: '综合阶段未能完成'},
+    implementation: {task: '无法实施', insight: '实施阶段未能完成'},
+    verification: {task: '无法验证', insight: '验证阶段未能完成'},
+  };
 
   try {
-    if (provider === 'gemini') {
-      const ai = new GoogleGenAI({ apiKey: config.apiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-      return JSON.parse(response.text);
-    } else {
-      const openai = new OpenAI({ apiKey: config.apiKey, dangerouslyAllowBrowser: true, baseURL: config.baseUrl });
-      const response = await openai.chat.completions.create({
-        model: config.modelName || "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
-      });
-      return JSON.parse(response.choices[0].message.content || '{}');
-    }
+    const context = await getProjectContext();
+    const prompt = `
+你现在处于 Coordinator Mode。请围绕用户目标，结合项目扫描摘要，输出严格 JSON。
+
+用户目标：${userGoal}
+项目扫描摘要：
+${context.outline}
+
+返回结构：
+{
+  "research": { "task": "研究任务", "insight": "关键洞察" },
+  "synthesis": { "task": "综合任务", "insight": "关键洞察" },
+  "implementation": { "task": "实施任务", "insight": "关键洞察" },
+  "verification": { "task": "验证任务", "insight": "关键洞察" }
+}
+`;
+    const raw = await requestProjectText(provider, config, prompt);
+    return parseJsonResponse<CoordinatorPlan>(raw, fallback);
   } catch (error) {
     console.error('Coordinator Error:', error);
-    return {
-      research: { task: "无法分析", insight: "研究中断" },
-      synthesis: { task: "无法综合", insight: "逻辑受阻" },
-      implementation: { task: "无法实施", insight: "开发限制" },
-      verification: { task: "无法验证", insight: "质量风险" }
-    };
+    return fallback;
   }
 }
 
-export async function runUltraplan(provider: AnalysisProvider, config: any, topic: string): Promise<string> {
-  const prompt = `你现在是 "Ultraplan" 云端深度规划引擎。
-请针对以下主题进行深度思考演化：【${topic}】
-你的思考必须包含：长期趋势、隐藏风险、指数级机会以及最终的战略蓝图。
-请写一篇不少于 800 字的详细思考报告。使用专业且具有前瞻性的语气。`;
-
+export async function runUltraplan(
+  provider: AnalysisProvider,
+  config: ProviderConfig,
+  topic: string,
+): Promise<string> {
   try {
-    if (provider === 'gemini') {
-      const ai = new GoogleGenAI({ apiKey: config.apiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: prompt,
-        config: { thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH } }
-      });
-      return response.text;
-    } else {
-      const openai = new OpenAI({ apiKey: config.apiKey, dangerouslyAllowBrowser: true, baseURL: config.baseUrl });
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }]
-      });
-       return response.choices[0].message.content || '思考失败。';
-    }
+    const context = await getProjectContext();
+    const prompt = `
+你现在处于 Ultraplan 深度规划模式。请围绕下面的主题，结合项目扫描摘要，输出一篇不少于 800 字的中文战略规划报告。
+
+主题：${topic}
+项目扫描摘要：
+${context.outline}
+`;
+    return await requestProjectText(provider, config, prompt);
   } catch (error) {
     console.error('Ultraplan Error:', error);
-    return '云端规划中继失败，请检查网络连接。';
+    return '云端规划中继失败，请检查桌面端模型配置。';
   }
 }
 
-export async function getKairosLogs(): Promise<{ logs: KairosLog[]; lastPatrol: string }> {
+export async function getKairosLogs(): Promise<{logs: KairosLog[]; lastPatrol: string}> {
   try {
-    const res = await fetch('/api/kairos/logs');
-    return await res.json();
+    ensureDesktopSupport();
+    const response = await fetchKairosLogsDesktop({});
+    if (!response) {
+      return {logs: [], lastPatrol: 'OFFLINE'};
+    }
+    return response;
   } catch {
-    return { logs: [], lastPatrol: "OFFLINE" };
+    return {logs: [], lastPatrol: 'OFFLINE'};
   }
 }

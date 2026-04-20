@@ -35,13 +35,10 @@ const DEFAULT_ANALYSIS: AppSettings['analysis'] = {
   autoScan: true,
 };
 
-export const BUILTIN_PROVIDER_MODELS: Record<ProviderType, string[]> = {
+const DEFAULT_PROVIDER_MODELS: Record<ProviderType, string[]> = {
   gemini: [
     'gemini-2.5-flash',
     'gemini-2.5-pro',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
     'gemini-3-flash-preview',
     'gemini-3-pro-preview',
   ],
@@ -53,19 +50,53 @@ export const BUILTIN_PROVIDER_MODELS: Record<ProviderType, string[]> = {
     'gpt-5-mini',
     'gpt-4.1',
     'gpt-4.1-mini',
-    'gpt-4o',
-    'gpt-4o-mini',
-    'gpt-4-turbo-preview',
-    'gpt-4',
-    'gpt-3.5-turbo',
   ],
   vertex_ai: [
-    'gemini-1.5-pro',
-    'gemini-1.5-flash',
-    'gemini-1.0-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
   ],
   custom: ['default'],
 };
+
+const LEGACY_DEFAULT_PROVIDER_MODEL_SETS: Record<ProviderType, string[][]> = {
+  gemini: [
+    [
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+      'gemini-3-flash-preview',
+      'gemini-3-pro-preview',
+    ],
+  ],
+  claude: [
+    ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
+  ],
+  openai: [
+    [
+      'gpt-5.4',
+      'gpt-5.4-mini',
+      'gpt-5',
+      'gpt-5-mini',
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'gpt-4-turbo-preview',
+      'gpt-4',
+      'gpt-3.5-turbo',
+    ],
+    ['gpt-4-turbo-preview', 'gpt-4', 'gpt-3.5-turbo'],
+  ],
+  vertex_ai: [
+    ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro'],
+    ['gemini-1.5-pro', 'gemini-1.5-flash'],
+  ],
+  custom: [],
+};
+
+export const BUILTIN_PROVIDER_MODELS: Record<ProviderType, string[]> = DEFAULT_PROVIDER_MODELS;
 
 type ProviderSeed = Omit<ProviderConfig, 'models'> & {models?: string[]};
 
@@ -76,6 +107,7 @@ const PROVIDER_SEEDS: Record<ProviderType, ProviderSeed> = {
     apiKey: '',
     baseUrl: 'https://generativelanguage.googleapis.com',
     enabled: true,
+    wireApi: 'cli',
   },
   claude: {
     id: 'claude',
@@ -91,7 +123,7 @@ const PROVIDER_SEEDS: Record<ProviderType, ProviderSeed> = {
     apiKey: '',
     baseUrl: 'https://api.openai.com/v1',
     enabled: true,
-    wireApi: 'chat_completions',
+    wireApi: 'cli',
   },
   custom: {
     id: 'custom',
@@ -99,7 +131,7 @@ const PROVIDER_SEEDS: Record<ProviderType, ProviderSeed> = {
     apiKey: '',
     baseUrl: '',
     enabled: true,
-    wireApi: 'chat_completions',
+    wireApi: 'cli',
   },
   vertex_ai: {
     id: 'vertex_ai',
@@ -125,6 +157,17 @@ function inferWireApi(
       return 'chat_completions';
     }
     return 'messages';
+  }
+  if (providerId === 'gemini') {
+    if (wireApi === 'cli') {
+      return 'cli';
+    }
+    return wireApi;
+  }
+  if (providerId === 'openai' || providerId === 'custom') {
+    if (wireApi === 'cli' || wireApi === 'chat_completions' || wireApi === 'responses') {
+      return wireApi;
+    }
   }
   if (
     (providerId === 'openai' || providerId === 'custom') &&
@@ -167,11 +210,33 @@ function uniqueModels(providerId: ProviderType, models: Array<string | undefined
   return next;
 }
 
+function sameModels(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+function reconcileProviderModels(providerId: ProviderType, models: string[]): string[] {
+  const currentDefaults = DEFAULT_PROVIDER_MODELS[providerId];
+  if (sameModels(models, currentDefaults)) {
+    return [...currentDefaults];
+  }
+
+  const legacySets = LEGACY_DEFAULT_PROVIDER_MODEL_SETS[providerId];
+  if (legacySets.some((legacy) => sameModels(models, legacy))) {
+    return [...currentDefaults];
+  }
+
+  return models;
+}
+
 export function buildDefaultProviderConfig(id: ProviderType): ProviderConfig {
   const seed = PROVIDER_SEEDS[id];
   return {
     ...seed,
-    models: [...BUILTIN_PROVIDER_MODELS[id]],
+    models: [...DEFAULT_PROVIDER_MODELS[id]],
   };
 }
 
@@ -207,7 +272,10 @@ export function normalizeSettings(raw?: Partial<AppSettings> | null): AppSetting
       const incoming = raw?.providers?.[providerId];
       const hasIncomingModels =
         !!incoming && Object.prototype.hasOwnProperty.call(incoming, 'models');
-      const normalizedIncomingModels = uniqueModels(providerId, incoming?.models ?? []);
+      const normalizedIncomingModels = reconcileProviderModels(
+        providerId,
+        uniqueModels(providerId, incoming?.models ?? []),
+      );
       acc[providerId] = {
         ...base,
         ...incoming,

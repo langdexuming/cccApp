@@ -11,6 +11,7 @@ export async function* streamChat(
   settings: AppSettings,
   activeModel: string,
   effort?: 'low' | 'medium' | 'high',
+  workspace?: string,
 ) {
   if (!activeModel.trim()) {
     throw new Error('当前没有可用模型，请先在设置中补充模型列表。');
@@ -21,6 +22,7 @@ export async function* streamChat(
     settings,
     activeModel,
     effort,
+    workspace,
   });
   if (desktopResponse !== null) {
     yield* yieldTextInChunks(desktopResponse);
@@ -193,13 +195,61 @@ function buildVertexGenerateBody(messages: Message[]) {
   return body;
 }
 
+function buildVertexPromptBody(prompt: string) {
+  return {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+  };
+}
+
+function normalizeVertexLocation(location?: string) {
+  const trimmed = (location || '').trim().replace(/\/$/, '');
+  if (!trimmed) {
+    return 'us-central1';
+  }
+
+  const withoutScheme = trimmed.replace(/^https?:\/\//i, '');
+  const hostOrRegion = withoutScheme.split('/')[0]?.trim() || withoutScheme;
+  const region = hostOrRegion.replace(/-aiplatform\.googleapis\.com$/i, '').trim();
+  return region || 'us-central1';
+}
+
+function buildVertexGenerateUrl(projectId: string, location: string, model: string) {
+  const loc = normalizeVertexLocation(location);
+  const pid = projectId.trim().replace(/^projects\//, '').replace(/\/$/, '');
+  const modelId = model.trim();
+  return `https://${loc}-aiplatform.googleapis.com/v1/projects/${pid}/locations/${loc}/publishers/google/models/${modelId}:generateContent`;
+}
+
+function resolveVertexManualToken(accessToken: string) {
+  const token = accessToken.trim();
+  if (token.startsWith('AIza')) {
+    throw new Error(
+      '不能使用以 AIza 开头的 Google AI Studio API Key 作为 Vertex 的 Bearer。请改用 OAuth 访问令牌，或在桌面端留空后由后端走 ADC。',
+    );
+  }
+  return token;
+}
+
+function enhanceVertexAuthErrorMessage(apiMessage: string): string {
+  const lower = apiMessage.toLowerCase();
+  if (
+    lower.includes('invalid authentication') ||
+    lower.includes('oauth 2 access token') ||
+    lower.includes('invalid credential') ||
+    lower.includes('unauthenticated')
+  ) {
+    return `${apiMessage}\n\nVertex 需要 OAuth 2.0 Bearer 令牌，不能使用 AI Studio 的 API Key（常以 AIza 开头）。请使用 gcloud auth print-access-token 等获取访问令牌，或在桌面端留空使用 ADC。`;
+  }
+  return apiMessage;
+}
+
 function textFromVertexGenerateResponse(data: unknown): string {
   const d = data as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     error?: { message?: string };
   };
   if (d?.error?.message) {
-    throw new Error(d.error.message);
+    throw new Error(enhanceVertexAuthErrorMessage(d.error.message));
   }
   const parts = d?.candidates?.[0]?.content?.parts;
   return parts?.map((p) => p.text ?? '').join('') ?? '';
@@ -212,14 +262,17 @@ async function* streamVertexGemini(
   projectId: string,
   location: string,
 ) {
-  const loc = location.trim() || 'us-central1';
-  const pid = projectId.trim();
-  const m = model.trim();
-  const url = `https://${loc}-aiplatform.googleapis.com/v1/projects/${pid}/locations/${loc}/publishers/google/models/${m}:generateContent`;
+  const token = resolveVertexManualToken(accessToken);
+  /* AIza validation is handled in resolveVertexManualToken.
+    throw new Error(
+      '不能使用以 AIza 开头的 Google AI Studio API Key 作为 Vertex 的 Bearer。请改用 OAuth 访问令牌或桌面端 ADC。',
+    );
+  */
+  const url = buildVertexGenerateUrl(projectId, location, model);
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${accessToken.trim()}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(buildVertexGenerateBody(messages)),
@@ -234,7 +287,7 @@ async function* streamVertexGemini(
     const msg =
       (data as { error?: { message?: string } })?.error?.message ||
       `Vertex AI 请求失败（HTTP ${res.status}）`;
-    throw new Error(msg);
+    throw new Error(enhanceVertexAuthErrorMessage(msg));
   }
   const text = textFromVertexGenerateResponse(data);
   if (!text.trim()) {
@@ -634,20 +687,16 @@ export async function generateTitle(firstMessage: string, settings: AppSettings)
       return response.text?.trim() || "New Chat";
     }
     if (settings.activeProvider === 'vertex_ai') {
-      const loc = provider.baseUrl?.trim() || 'us-central1';
-      const pid = provider.projectId!.trim();
       const modelId = provider.models[0] || 'gemini-2.5-flash';
-      const url = `https://${loc}-aiplatform.googleapis.com/v1/projects/${pid}/locations/${loc}/publishers/google/models/${modelId}:generateContent`;
+      const url = buildVertexGenerateUrl(provider.projectId!.trim(), provider.baseUrl || '', modelId);
       const prompt = `Generate a very short, concise title (max 5 words) for a chat that starts with: "${firstMessage}". Return only the title text.`;
       const res = await fetch(url, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${provider.apiKey.trim()}`,
+          Authorization: `Bearer ${resolveVertexManualToken(provider.apiKey)}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        }),
+        body: JSON.stringify(buildVertexPromptBody(prompt)),
       });
       const data = await res.json();
       if (!res.ok) {

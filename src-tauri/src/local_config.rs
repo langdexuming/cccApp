@@ -272,6 +272,7 @@ fn pick_codex_base_url(content: &str) -> Option<(String, Vec<String>)> {
   pick_codex_provider_value(content, "base_url")
 }
 
+#[cfg(test)]
 fn pick_codex_wire_api(content: &str) -> Option<(String, Vec<String>)> {
   pick_codex_provider_value(content, "wire_api")
 }
@@ -464,19 +465,6 @@ pub fn load_local_tool_configs() -> LocalToolConfigResponse {
       }
     }
     let Some((base, keys)) = pick_codex_base_url(&raw) else {
-      if let Some((wire_api, keys)) = pick_codex_wire_api(&raw) {
-        merge_provider_patch(
-          &mut response.providers,
-          "openai",
-          None,
-          None,
-          None,
-          Some(wire_api),
-          None,
-        );
-        let key_refs = keys.iter().map(String::as_str).collect::<Vec<_>>();
-        push_source(&mut response.sources, &file_path, key_refs);
-      }
       continue;
     };
     let trimmed = base.trim().trim_end_matches('/');
@@ -485,21 +473,16 @@ pub fn load_local_tool_configs() -> LocalToolConfigResponse {
     } else {
       format!("{trimmed}/v1")
     };
-    let wire_api = pick_codex_wire_api(&raw).map(|item| item.0);
     merge_provider_patch(
       &mut response.providers,
       "openai",
       None,
       None,
       Some(normalized),
-      wire_api,
+      None,
       None,
     );
-    let mut merged_keys = keys;
-    if let Some((_, wire_keys)) = pick_codex_wire_api(&raw) {
-      merged_keys.extend(wire_keys);
-    }
-    let key_refs = merged_keys.iter().map(String::as_str).collect::<Vec<_>>();
+    let key_refs = keys.iter().map(String::as_str).collect::<Vec<_>>();
     push_source(&mut response.sources, &file_path, key_refs);
   }
 

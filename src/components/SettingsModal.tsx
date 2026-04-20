@@ -364,12 +364,31 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                   <div className="space-y-4 rounded-2xl border border-border-theme bg-zinc-50 p-4">
                     {currentProvider === 'vertex_ai' ? (
                       <p className="text-[11px] leading-relaxed text-text-secondary rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2">
-                        请在聊天顶栏选中「Google Vertex AI」。接入与官方一致：HTTPS 主机名为「区域 -aiplatform.googleapis.com」，路径为 v1/projects/项目ID/locations/区域/publishers/google/models/模型名:generateContent；令牌 scope 为 https://www.googleapis.com/auth/cloud-platform。桌面版若留空令牌，使用 gcp_auth 的 ADC（服务账号 JSON 路径放 GOOGLE_APPLICATION_CREDENTIALS，或执行 gcloud auth application-default login）；也可手动粘贴短期 OAuth 访问令牌。连接超时请检查代理/VPN。桌面端 HTTP 会读取环境变量中的 HTTP_PROXY、HTTPS_PROXY、NO_PROXY（设置后需重启应用）；不会自动沿用浏览器里的「系统代理」开关，若仅用系统代理界面配置，请改为写入上述环境变量或使用 TUN 类全局 VPN。
+                        请在聊天顶栏选中「Google Vertex AI」。桌面端会调用 Vertex REST 接口，并按这个顺序取鉴权：`OAuth Token`、`服务账号 JSON 路径/内容`、本机 ADC（`GOOGLE_APPLICATION_CREDENTIALS` 或 `gcloud auth application-default login`）。区域栏既可填 `us-central1`，也可填完整主机名。连接超时请检查代理/VPN。桌面端 HTTP 会读取环境变量中的 HTTP_PROXY、HTTPS_PROXY、NO_PROXY（设置后需重启应用）；不会自动沿用浏览器里的「系统代理」开关，若仅用系统代理界面配置，请改为写入上述环境变量或使用 TUN 类全局 VPN。
                       </p>
                     ) : null}
-                    <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">{currentProvider === 'vertex_ai' ? 'OAuth 访问令牌（可选，桌面留空走 ADC）' : 'API Key / OAuth Token'}</label><input type="password" value={currentProviderConfig.apiKey} onChange={(e) => updateProvider(currentProvider, {apiKey: e.target.value})} placeholder={currentProvider === 'vertex_ai' ? '留空则桌面端使用 gcp_auth / ADC' : `输入 ${currentProviderConfig.name} 的 API Key`} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
                     {currentProvider === 'vertex_ai' ? (
                       <>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-text-secondary">OAuth Access Token（可选）</label>
+                          <input
+                            type="password"
+                            value={currentProviderConfig.authToken || ''}
+                            onChange={(e) => updateProvider(currentProvider, {authToken: e.target.value})}
+                            placeholder="填 ya29...；留空则继续看下一个鉴权来源"
+                            className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-text-secondary">服务账号 JSON 路径 / JSON 原文（可选）</label>
+                          <input
+                            type="text"
+                            value={currentProviderConfig.apiKey}
+                            onChange={(e) => updateProvider(currentProvider, {apiKey: e.target.value})}
+                            placeholder="例如 D:\\keys\\vertex-sa.json 或直接粘贴 JSON"
+                            className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm"
+                          />
+                        </div>
                         <div className="space-y-1.5">
                           <label className="text-xs font-semibold text-text-secondary">GCP Project ID</label>
                           <input 
@@ -392,9 +411,72 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                         </div>
                       </>
                     ) : (
-                      <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">Base URL</label><input type="text" value={currentProviderConfig.baseUrl || ''} onChange={(e) => updateProvider(currentProvider, {baseUrl: e.target.value})} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
+                      <>
+                        <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">API Key / OAuth Token</label><input type="password" value={currentProviderConfig.apiKey} onChange={(e) => updateProvider(currentProvider, {apiKey: e.target.value})} placeholder={`输入 ${currentProviderConfig.name} 的 API Key`} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
+                        <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">Base URL</label><input type="text" value={currentProviderConfig.baseUrl || ''} onChange={(e) => updateProvider(currentProvider, {baseUrl: e.target.value})} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm" /></div>
+                      </>
                     )}
-                    {(currentProvider === 'claude' || currentProvider === 'openai' || currentProvider === 'custom') ? <div className="space-y-1.5"><label className="text-xs font-semibold text-text-secondary">接口协议</label><select value={currentProviderConfig.wireApi || (currentProvider === 'claude' ? 'messages' : 'chat_completions')} onChange={(e) => updateProvider(currentProvider, {wireApi: e.target.value as ProviderConfig['wireApi']})} className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm">{currentProvider === 'claude' ? <><option value="messages">messages</option><option value="chat_completions">chat/completions</option><option value="cli">CLI (本地 claude.exe)</option></> : <><option value="chat_completions">chat/completions</option><option value="responses">responses</option></>}</select>{currentProvider === 'claude' && currentProviderConfig.wireApi === 'cli' ? <p className="text-[10px] leading-relaxed text-text-secondary">通过本地 <code>claude</code> CLI 子进程发送请求，绕过直连 HTTP。需要已安装 Claude Code CLI；Base URL 与 Auth Token 会作为环境变量传入子进程。</p> : null}</div> : null}
+                    {(currentProvider === 'gemini' || currentProvider === 'claude' || currentProvider === 'openai' || currentProvider === 'custom') ? (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-text-secondary">接口协议</label>
+                        <select
+                          value={
+                            currentProviderConfig.wireApi ||
+                            (currentProvider === 'claude'
+                              ? 'messages'
+                              : currentProvider === 'gemini' || currentProvider === 'openai' || currentProvider === 'custom'
+                                ? 'cli'
+                                : 'chat_completions')
+                          }
+                          onChange={(e) => updateProvider(currentProvider, {wireApi: e.target.value as ProviderConfig['wireApi']})}
+                          className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm"
+                        >
+                          {currentProvider === 'gemini' ? (
+                            <>
+                              <option value="cli">CLI (本地 gemini)</option>
+                            </>
+                          ) : currentProvider === 'claude' ? (
+                            <>
+                              <option value="messages">messages</option>
+                              <option value="chat_completions">chat/completions</option>
+                              <option value="cli">CLI (本地 claude)</option>
+                            </>
+                          ) : currentProvider === 'openai' ? (
+                            <>
+                              <option value="cli">CLI (本地 codex)</option>
+                              <option value="chat_completions">chat/completions</option>
+                              <option value="responses">responses</option>
+                            </>
+                          ) : (
+                            <>
+                              <option value="cli">CLI (Claude 壳 / OpenAPI)</option>
+                              <option value="chat_completions">chat/completions</option>
+                              <option value="responses">responses</option>
+                            </>
+                          )}
+                        </select>
+                        {currentProvider === 'gemini' && currentProviderConfig.wireApi === 'cli' ? (
+                          <p className="text-[10px] leading-relaxed text-text-secondary">
+                            通过本地 <code>gemini</code> CLI 子进程发送请求。桌面版会给 Gemini CLI 使用独立的受控 home/session 目录，并将 API Key 与 Base URL 作为环境变量传入。
+                          </p>
+                        ) : null}
+                        {currentProvider === 'claude' && currentProviderConfig.wireApi === 'cli' ? (
+                          <p className="text-[10px] leading-relaxed text-text-secondary">
+                            通过本地 <code>claude</code> CLI 子进程发送请求，绕过直连 HTTP。需要已安装 Claude Code CLI；Base URL 与 Auth Token 会作为环境变量传入子进程。
+                          </p>
+                        ) : null}
+                        {currentProvider === 'openai' && currentProviderConfig.wireApi === 'cli' ? (
+                          <p className="text-[10px] leading-relaxed text-text-secondary">
+                            通过本地 <code>codex</code> CLI 子进程发送请求。优先使用 Codex CLI 自身的登录态；如果当前提供商填写了 API Key / Base URL，也会同步传给子进程环境变量。
+                          </p>
+                        ) : null}
+                        {currentProvider === 'custom' && currentProviderConfig.wireApi === 'cli' ? (
+                          <p className="text-[10px] leading-relaxed text-text-secondary">
+                            使用 Claude CLI 风格的本地子进程壳承载 OpenAPI 兼容模型接入。当前 Base URL、API Key / Auth Token 会直接传入子进程环境。
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="flex gap-2"><input type="text" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addModel()} placeholder="输入模型 ID，例如 gpt-5.4" className="flex-1 rounded-xl border border-border-theme bg-white px-4 py-2 text-sm" /><button onClick={() => addModel()} className="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold"><Plus className="h-4 w-4" /></button></div>
                     {currentProvider === 'claude' ? <div className="space-y-2"><button type="button" disabled={remoteModelBusy} onClick={handleFetchRemoteModels} className="flex w-full items-center justify-center gap-2 rounded-xl border border-border-theme bg-white px-4 py-2.5 text-xs font-bold disabled:opacity-50"><RefreshCw className={cn('h-3.5 w-3.5', remoteModelBusy && 'animate-spin')} />{remoteModelBusy ? '正在拉取远程模型...' : '从当前 Claude 接口拉取远程模型'}</button>{remoteModelHint ? <p className="text-[10px] text-text-secondary">{remoteModelHint}</p> : null}</div> : null}
                     {availablePresetModels.length > 0 ? <div className="space-y-2"><input type="text" value={candidateFilter} onChange={(e) => setCandidateFilter(e.target.value)} placeholder="搜索可添加模型..." className="w-full rounded-xl border border-border-theme bg-white px-3 py-2 text-xs" /><div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-border-theme bg-white p-2">{filteredPresetModels.length > 0 ? filteredPresetModels.slice(0, 16).map((model) => <div key={model} className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-zinc-50"><span className="break-all text-xs text-text-primary">{model}</span><button type="button" onClick={() => addModel(model)} className="rounded-lg bg-zinc-100 px-2.5 py-1 text-[11px] font-bold">添加</button></div>) : <div className="px-2 py-4 text-center text-[11px] text-text-secondary">没有匹配的候选模型。</div>}</div></div> : null}

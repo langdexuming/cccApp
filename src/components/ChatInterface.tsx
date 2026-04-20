@@ -1,14 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+﻿import { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings, Bug, CheckCircle2, FileText, Rocket, Box, FolderInput } from 'lucide-react';
 import { Message as MessageType, Chat, AppSettings, ProviderType, ProjectPhase, Task } from '../types';
 import { DEFAULT_SETTINGS } from '../constants';
 import { Message } from './Message';
 import { ProjectTimeline } from './ProjectTimeline';
 import { streamChat, generateTitle } from '../services/chatService';
-import { isTauriRuntime } from '../lib/desktop';
+import { isTauriRuntime, normalizeWorkspacePath, openWorkspacePath } from '../lib/desktop';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
+import { looksLikeWorkspacePath } from '../lib/workspace';
 
 const AI_PROMPTS = [
   { icon: <Terminal className="w-3" />, text: "解释这段代码的工作原理", color: "text-blue-600 bg-blue-50/50" },
@@ -125,7 +126,9 @@ export function ChatInterface({
   }, [activeProvider.models, chat?.effort, chat?.id, chat?.model, chat?.provider, settings.activeProvider]);
 
   useEffect(() => {
-    setWorkspaceDraft(chat?.workspace?.trim() ?? '');
+    if (chat) {
+      setWorkspaceDraft(chat.workspace?.trim() ?? '');
+    }
   }, [chat?.id, chat?.workspace]);
 
   useEffect(() => {
@@ -257,6 +260,35 @@ export function ChatInterface({
     });
   };
 
+  const commitWorkspaceDraft = async (): Promise<string | undefined> => {
+    const trimmed = workspaceDraft.trim();
+    if (!trimmed) {
+      if (chat?.workspace) {
+        onPatchChat?.(chat.id, { workspace: undefined });
+      }
+      setWorkspaceDraft('');
+      return undefined;
+    }
+
+    let nextWorkspace = trimmed;
+    if (looksLikeWorkspacePath(trimmed)) {
+      try {
+        const normalized = await normalizeWorkspacePath(trimmed);
+        if (normalized?.trim()) {
+          nextWorkspace = normalized.trim();
+        }
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    setWorkspaceDraft(nextWorkspace);
+    if (chat && nextWorkspace !== (chat.workspace ?? '').trim()) {
+      onPatchChat?.(chat.id, { workspace: nextWorkspace });
+    }
+    return nextWorkspace || undefined;
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -269,6 +301,7 @@ export function ChatInterface({
     };
 
     let currentChat = chat;
+    const nextWorkspace = await commitWorkspaceDraft();
     if (!currentChat) {
       const newChat: Chat = {
         id: Date.now().toString(),
@@ -278,6 +311,7 @@ export function ChatInterface({
         model: selectedModel,
         provider: settings.activeProvider,
         effort: selectedEffort,
+        workspace: nextWorkspace,
       };
       onUpdateChat(newChat);
       currentChat = newChat;
@@ -294,6 +328,7 @@ export function ChatInterface({
         model: selectedModel,
         provider: settings.activeProvider,
         effort: selectedEffort,
+        workspace: nextWorkspace,
       };
       onUpdateChat(updatedChat);
       currentChat = updatedChat;
@@ -311,7 +346,13 @@ export function ChatInterface({
       const assistantMessageId = (Date.now() + 1).toString();
       let assistantContent = '';
       
-      const stream = streamChat(currentChat.messages, settings, selectedModel, selectedEffort);
+      const stream = streamChat(
+        currentChat.messages,
+        settings,
+        selectedModel,
+        selectedEffort,
+        currentChat.workspace,
+      );
       
       for await (const chunk of stream) {
         assistantContent += chunk;
@@ -358,11 +399,11 @@ export function ChatInterface({
           <button 
             onClick={onToggleSidebar}
             className="group relative p-2 hover:bg-zinc-100 rounded-lg transition-colors text-text-secondary hover:text-text-primary"
-            title={isSidebarVisible ? "隐藏侧边栏 (⌘B)" : "显示侧边栏 (⌘B)"}
+            title={isSidebarVisible ? "隐藏侧边栏 (Ctrl+B)" : "显示侧边栏 (Ctrl+B)"}
           >
             {isSidebarVisible ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
             <kbd className="absolute -bottom-6 left-1/2 -translate-x-1/2 hidden group-hover:inline-flex h-4 w-7 items-center justify-center rounded border border-zinc-200 bg-white shadow-sm font-mono text-[9px] font-medium text-zinc-400 z-50">
-              ⌘B
+              Ctrl+B
             </kbd>
           </button>
           <div className="flex items-center gap-2 px-2 py-1 hover:bg-zinc-50 rounded-lg cursor-pointer transition-colors group">
@@ -371,33 +412,44 @@ export function ChatInterface({
             </h2>
             <ChevronDown className="w-3.5 h-3.5 text-text-secondary group-hover:text-text-primary transition-colors" />
           </div>
-          {chat && onPatchChat && (
-            <div className="hidden sm:flex items-center gap-1.5 min-w-0 max-w-[200px] md:max-w-xs ml-1" title="侧栏会话分组">
+          {(chat || workspaceDraft) && (
+            <div
+              className="hidden sm:flex items-center gap-1.5 min-w-0 max-w-[240px] lg:max-w-sm ml-1"
+              title="当前会话关联的工作区路径"
+            >
               <FolderInput className="w-3.5 h-3.5 text-text-secondary shrink-0" aria-hidden />
               <input
                 value={workspaceDraft}
                 onChange={(e) => setWorkspaceDraft(e.target.value)}
-                onBlur={() => {
-                  const next = workspaceDraft.trim();
-                  const prev = (chat.workspace ?? '').trim();
-                  if (next === prev) {
-                    return;
-                  }
-                  onPatchChat(chat.id, { workspace: next || undefined });
-                }}
+                onBlur={() => { void commitWorkspaceDraft(); }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     (e.target as HTMLInputElement).blur();
                   }
                 }}
-                placeholder="分组名…"
+                placeholder="输入工作区路径"
                 className="text-[11px] text-text-secondary bg-zinc-50 border border-border-theme rounded px-2 py-1 w-full min-w-0 outline-none focus:border-accent-theme"
-                title="用于侧栏会话分组；留空为「本地 / 未分组」"
+                title="用于关联 CLI 会话工作区；留空则不绑定工作区"
               />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!workspaceDraft.trim()) {
+                    return;
+                  }
+                  void openWorkspacePath(workspaceDraft.trim()).catch((error) => {
+                    setErrorMessage(error instanceof Error ? error.message : String(error));
+                  });
+                }}
+                disabled={!workspaceDraft.trim() || !looksLikeWorkspacePath(workspaceDraft)}
+                className="shrink-0 rounded border border-border-theme bg-zinc-50 px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                title="打开工作区"
+              >
+                打开
+              </button>
             </div>
           )}
         </div>
-
         <div className="flex items-center gap-2">
           {/* Provider Selector */}
           <div className="flex items-center bg-zinc-100/80 p-1 rounded-xl gap-1">
@@ -493,7 +545,7 @@ export function ChatInterface({
                     ? "bg-white text-text-primary shadow-sm" 
                     : "text-text-secondary hover:text-text-primary"
                 )}
-                title={`思考程度: ${e.name}`}
+                title={`思考强度 ${e.name}`}
               >
                 <e.icon className={cn("w-3 h-3", selectedEffort === e.id ? "text-blue-500" : "")} />
                 <span className="hidden xl:inline">{e.name}</span>
@@ -650,9 +702,9 @@ export function ChatInterface({
               <BotIcon className="w-10 h-10 text-accent-theme" />
             </motion.div>
             <div className="space-y-2 max-w-sm">
-              <h1 className="text-2xl font-semibold text-text-primary">今天我能帮您什么？</h1>
+              <h1 className="text-2xl font-semibold text-text-primary">今天我能帮您做什么？</h1>
               <p className="text-text-secondary">
-                我是 Claude，一个由 Anthropic 构建的 AI 助手，旨在提供安全、准确和有用的帮助。
+                我是 Claude，一个由 Anthropic 构建的 AI 助手，致力于提供安全、准确且有帮助的支持。
               </p>
             </div>
           </div>
@@ -666,7 +718,7 @@ export function ChatInterface({
                   onUpdateChat({ ...chat, currentPhase: phase });
                 }}
                 onAddTask={() => {
-                  const title = prompt('输入新任务名称:');
+                  const title = prompt('输入新任务名称');
                   if (title) {
                     const newTask: Task = {
                       id: Date.now().toString(),
@@ -758,7 +810,7 @@ export function ChatInterface({
               >
                 <div className="px-3 py-2 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-zinc-50 mb-1 flex items-center gap-2">
                   <Terminal className="w-3 h-3" />
-                  快捷命令
+              快捷命令
                 </div>
                 {commands.map((cmd) => (
                   <button
@@ -793,7 +845,7 @@ export function ChatInterface({
               value={input}
               onChange={handleInput}
               onKeyDown={handleKeyDown}
-              placeholder="在这里输入您的问题..."
+          placeholder="在这里输入您的问题..."
               className="flex-1 bg-transparent border-0 focus:ring-0 resize-none py-2 px-1 text-text-primary placeholder-zinc-400 text-[15px] leading-relaxed"
             />
             <div className="flex justify-between items-center mt-3 pt-3 border-t border-zinc-50">
@@ -807,7 +859,7 @@ export function ChatInterface({
                   <div className="absolute bottom-full mb-2 left-0 opacity-0 group-hover/upload:opacity-100 transition-all pointer-events-none translate-y-2 group-hover/upload:translate-y-0">
                     <div className="bg-text-primary text-white px-3 py-1.5 rounded-lg text-[9px] font-bold shadow-xl whitespace-nowrap flex items-center gap-2">
                       <Box className="w-3 h-3 text-accent-theme" />
-                      支持全量文档/网页资产抓取
+                      支持全文档 / 网页资产抓取
                     </div>
                   </div>
                 </div>
@@ -818,7 +870,7 @@ export function ChatInterface({
                     "p-2 rounded-xl transition-all active:scale-95",
                     isListening ? "text-red-500 bg-red-50" : "text-text-secondary hover:text-text-primary hover:bg-zinc-50"
                   )}
-                  title="语音输入 / 手谈标注"
+                  title="语音输入 / 手动标注"
                 >
                   {isListening ? <MicOff className="w-4 h-4 animate-pulse" /> : <Mic className="w-4 h-4" />}
                 </button>
@@ -870,3 +922,4 @@ function BotIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+

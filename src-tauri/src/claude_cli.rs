@@ -7,6 +7,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
+use crate::cli_session_store;
 use crate::models::ProviderConfig;
 
 /// Stable namespace used to derive deterministic session UUIDs per chat.
@@ -263,23 +264,25 @@ pub async fn chat_with_claude_cli(
   provider: &ProviderConfig,
   model: &str,
   messages: &[crate::models::Message],
+  workspace: Option<&str>,
 ) -> Result<String, String> {
   let user_message = last_user_message(messages)
     .ok_or_else(|| "对话中没有待发送的用户消息。".to_string())?;
-  let seed = messages
+  let base_seed = messages
     .first()
     .map(|m| m.id.as_str())
     .filter(|id| !id.is_empty())
     .unwrap_or("cccapp-claude-cli");
-  let session_id = derive_session_id(seed);
+  let seed = cli_session_store::session_seed(base_seed, workspace);
+  let session_id = derive_session_id(&seed);
   let first_turn = is_first_turn(messages);
-  match invoke_claude_cli(provider, model, &session_id, first_turn, user_message).await {
+  match invoke_claude_cli(provider, model, &session_id, first_turn, user_message, workspace).await {
     Ok(text) => Ok(text),
     Err(err) if first_turn && err.contains("already in use") => {
-      invoke_claude_cli(provider, model, &session_id, false, user_message).await
+      invoke_claude_cli(provider, model, &session_id, false, user_message, workspace).await
     }
     Err(err) if !first_turn && looks_like_missing_session(&err) => {
-      invoke_claude_cli(provider, model, &session_id, true, user_message).await
+      invoke_claude_cli(provider, model, &session_id, true, user_message, workspace).await
     }
     Err(err) => Err(err),
   }
@@ -299,7 +302,7 @@ pub async fn title_with_claude_cli(
   prompt: &str,
 ) -> Result<String, String> {
   let session_id = Uuid::new_v4().to_string();
-  invoke_claude_cli(provider, model, &session_id, true, prompt).await
+  invoke_claude_cli(provider, model, &session_id, true, prompt, None).await
 }
 
 async fn invoke_claude_cli(
@@ -308,6 +311,7 @@ async fn invoke_claude_cli(
   session_id: &str,
   is_first_turn: bool,
   user_message: &str,
+  workspace: Option<&str>,
 ) -> Result<String, String> {
   if user_message.trim().is_empty() {
     return Err("消息内容为空，无法发送到 Claude CLI。".to_string());
@@ -319,6 +323,9 @@ async fn invoke_claude_cli(
   let bin = claude_binary();
   let mut cmd = build_claude_command(&bin);
   cmd.args(&built.args);
+  if let Some(workspace) = workspace.map(str::trim).filter(|value| !value.is_empty()) {
+    cmd.current_dir(workspace);
+  }
   cmd.stdout(Stdio::piped());
   cmd.stderr(Stdio::piped());
   if built.via_stdin {

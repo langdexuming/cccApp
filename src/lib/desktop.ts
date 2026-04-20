@@ -4,6 +4,7 @@ import type {
   Message,
   PersistedAppState,
   Chat,
+  ProviderConfig,
 } from '../types';
 
 declare global {
@@ -17,6 +18,7 @@ type ChatCompletionPayload = {
   settings: AppSettings;
   activeModel: string;
   effort?: Chat['effort'];
+  workspace?: string;
 };
 
 type TitlePayload = {
@@ -42,6 +44,66 @@ type GitSyncResponse = {
   stdout: string;
   stderr: string;
 };
+
+type ProjectContextPayload = {
+  rootPath?: string;
+};
+
+type ProjectContextResponse = {
+  rootPath: string;
+  outline: string;
+};
+
+type ProjectGeneratePayload = {
+  rootPath?: string;
+  providerId: string;
+  provider: ProviderConfig;
+  activeModel?: string;
+  prompt: string;
+};
+
+type ProjectApplyFixPayload = {
+  rootPath?: string;
+  file: string;
+  content: string;
+};
+
+type ProjectApplyFixResponse = {
+  path: string;
+};
+
+type KairosLog = {
+  timestamp: string;
+  event: string;
+  type: string;
+};
+
+type KairosLogsResponse = {
+  logs: KairosLog[];
+  lastPatrol: string;
+};
+
+type DesktopUpdateInfo = {
+  available?: boolean;
+  version?: string;
+  body?: string;
+  date?: string;
+  downloadAndInstall?: (onProgress?: (progress: unknown) => void) => Promise<void>;
+};
+
+export async function normalizeWorkspacePath(path: string): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invokeCommand<string>('normalize_workspace_path', {path});
+}
+
+export async function openWorkspacePath(path: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  await invokeCommand('open_workspace_path', {path});
+}
 
 export function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof window.__TAURI_INTERNALS__ !== 'undefined';
@@ -109,12 +171,53 @@ export async function requestGitSync(
   return invokeCommand<GitSyncResponse>('git_sync', {payload});
 }
 
-export async function checkDesktopUpdate() {
+export async function readProjectContext(
+  payload: ProjectContextPayload,
+): Promise<ProjectContextResponse | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invokeCommand<ProjectContextResponse>('read_project_context', {payload});
+}
+
+export async function generateProjectText(
+  payload: ProjectGeneratePayload,
+): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invokeCommand<string>('generate_project_text', {payload});
+}
+
+export async function applyProjectFixDesktop(
+  payload: ProjectApplyFixPayload,
+): Promise<ProjectApplyFixResponse | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invokeCommand<ProjectApplyFixResponse>('apply_project_fix', {payload});
+}
+
+export async function fetchKairosLogsDesktop(
+  payload: ProjectContextPayload = {},
+): Promise<KairosLogsResponse | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invokeCommand<KairosLogsResponse>('get_kairos_logs', {payload});
+}
+
+export async function checkDesktopUpdate(): Promise<DesktopUpdateInfo | null> {
   if (!isTauriRuntime()) {
     return null;
   }
   try {
-    const { check } = await import('@tauri-apps/plugin-updater');
+    const updaterSpecifier = '@tauri-apps/plugin-updater';
+    const updaterModule = await import(/* @vite-ignore */ updaterSpecifier);
+    const check = (updaterModule as {check?: () => Promise<DesktopUpdateInfo | null>}).check;
+    if (!check) {
+      return null;
+    }
     const update = await check();
     return update;
   } catch (error) {

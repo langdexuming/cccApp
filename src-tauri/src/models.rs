@@ -120,6 +120,8 @@ pub struct ChatCompletionPayload {
   pub settings: AppSettings,
   pub active_model: String,
   pub effort: Option<String>,
+  #[serde(default)]
+  pub workspace: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -150,6 +152,64 @@ pub struct ProjectAnalysisPayload {
   pub settings: AppSettings,
   #[serde(default)]
   pub active_model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectContextPayload {
+  #[serde(default)]
+  pub root_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectContextResponse {
+  pub root_path: String,
+  pub outline: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectGeneratePayload {
+  #[serde(default)]
+  pub root_path: String,
+  pub provider_id: String,
+  pub provider: ProviderConfig,
+  #[serde(default)]
+  pub active_model: String,
+  pub prompt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectApplyFixPayload {
+  #[serde(default)]
+  pub root_path: String,
+  pub file: String,
+  pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectApplyFixResponse {
+  pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct KairosLogEntry {
+  pub timestamp: String,
+  pub event: String,
+  #[serde(rename = "type")]
+  pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct KairosLogsResponse {
+  #[serde(default)]
+  pub logs: Vec<KairosLogEntry>,
+  pub last_patrol: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

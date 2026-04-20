@@ -26,14 +26,14 @@ export function ProjectTimeline({ currentPhase, tasks, onUpdatePhase, onAddTask 
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-text-primary tracking-tight">AI 协作生命周期</h2>
-          <p className="text-xs text-text-secondary mt-1">从构思到落地的全流程自动跟进</p>
+          <p className="text-xs text-text-secondary mt-1">从构想到落地的全流程自动跟进</p>
         </div>
         <div className="flex items-center gap-2">
           {PHASES.map((phase, idx) => {
             const Icon = phase.icon;
             const isCompleted = idx < currentPhaseIndex;
             const isActive = idx === currentPhaseIndex;
-            
+
             return (
               <div key={phase.id} className="flex items-center">
                 <button
@@ -45,7 +45,7 @@ export function ProjectTimeline({ currentPhase, tasks, onUpdatePhase, onAddTask 
                 >
                   <div className={cn(
                     "p-2.5 rounded-2xl transition-all shadow-sm",
-                    isActive ? "bg-accent-theme text-white ring-4 ring-accent-theme/10" : 
+                    isActive ? "bg-accent-theme text-white ring-4 ring-accent-theme/10" :
                     isCompleted ? "bg-emerald-100 text-emerald-600" : "bg-white text-zinc-400"
                   )}>
                     <Icon className="w-5 h-5" />
@@ -57,7 +57,7 @@ export function ProjectTimeline({ currentPhase, tasks, onUpdatePhase, onAddTask 
                     {phase.name}
                   </span>
                   {isActive && (
-                    <motion.div 
+                    <motion.div
                       layoutId="active-indicator"
                       className="absolute -bottom-1 w-1 h-1 rounded-full bg-accent-theme"
                     />
@@ -81,7 +81,7 @@ export function ProjectTimeline({ currentPhase, tasks, onUpdatePhase, onAddTask 
               <Clock className="w-3 h-3 text-accent-theme" />
               当前阶段任务流
             </h3>
-            <button 
+            <button
               onClick={onAddTask}
               className="p-1 hover:bg-zinc-50 rounded-lg text-accent-theme transition-colors"
             >

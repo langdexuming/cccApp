@@ -1,10 +1,15 @@
 use std::{
+  env,
   error::Error,
+  fs,
+  path::Path,
   process,
   time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use reqwest::{Client, RequestBuilder, Response, StatusCode};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::time::sleep;
 
@@ -150,13 +155,17 @@ fn uses_claude_chat_completions_api(provider: &ProviderConfig) -> bool {
     .unwrap_or(false)
 }
 
-fn uses_claude_cli(provider: &ProviderConfig) -> bool {
+fn uses_cli(provider: &ProviderConfig) -> bool {
   provider
     .wire_api
     .as_deref()
     .map(str::trim)
     .map(|value| value.eq_ignore_ascii_case("cli"))
     .unwrap_or(false)
+}
+
+fn uses_claude_cli(provider: &ProviderConfig) -> bool {
+  uses_cli(provider)
 }
 
 fn claude_api_root(provider: &ProviderConfig) -> String {
@@ -328,6 +337,52 @@ struct ClaudeDebugContext {
   selected_model: String,
   api_model: String,
   beta_headers: Vec<String>,
+}
+
+struct VertexDebugContext {
+  endpoint: String,
+  project_id: String,
+  location: String,
+  selected_model: String,
+  auth_mode: String,
+  auth_source: Option<String>,
+  token_uri: Option<String>,
+  service_account_email: Option<String>,
+  proxy_env: String,
+}
+
+struct VertexResolvedAuth {
+  bearer: String,
+  auth_mode: String,
+  auth_source: Option<String>,
+  token_uri: Option<String>,
+  service_account_email: Option<String>,
+  proxy_env: String,
+}
+
+#[derive(Deserialize)]
+struct VertexServiceAccountCredentials {
+  client_email: String,
+  token_uri: String,
+}
+
+#[derive(Serialize)]
+struct VertexServiceAccountJwtClaims<'a> {
+  iss: &'a str,
+  aud: &'a str,
+  exp: u64,
+  iat: u64,
+  scope: String,
+}
+
+#[derive(Deserialize)]
+struct VertexServiceAccountTokenResponse {
+  access_token: String,
+}
+
+enum VertexServiceAccountSource {
+  InlineJson,
+  FilePath,
 }
 
 fn claude_user_agent() -> String {
@@ -587,6 +642,7 @@ fn chain_transport_error(err: &reqwest::Error) -> String {
   out
 }
 
+#[allow(dead_code)]
 fn vertex_generate_content_url(project_id: &str, location: &str, model: &str) -> String {
   let pid = normalize_vertex_project_id(project_id);
   let loc = location.trim();
@@ -596,6 +652,7 @@ fn vertex_generate_content_url(project_id: &str, location: &str, model: &str) ->
   )
 }
 
+#[allow(dead_code)]
 fn vertex_location(provider: &ProviderConfig) -> &str {
   provider
     .base_url
@@ -640,6 +697,106 @@ fn gemini_generate_content_url(provider: &ProviderConfig, model: &str, api_key: 
     format!("{trimmed}/models/{model}:generateContent?key={api_key}")
   } else {
     format!("{trimmed}/v1beta/models/{model}:generateContent?key={api_key}")
+  }
+}
+
+fn normalize_vertex_location_safe(raw: &str) -> String {
+  let trimmed = raw.trim().trim_end_matches('/');
+  if trimmed.is_empty() {
+    return "us-central1".to_string();
+  }
+
+  let without_scheme = trimmed
+    .strip_prefix("https://")
+    .or_else(|| trimmed.strip_prefix("http://"))
+    .unwrap_or(trimmed);
+  let host_or_region = without_scheme.split('/').next().unwrap_or(without_scheme).trim();
+  let region = host_or_region
+    .strip_suffix("-aiplatform.googleapis.com")
+    .unwrap_or(host_or_region)
+    .trim();
+
+  if region.is_empty() {
+    "us-central1".to_string()
+  } else {
+    region.to_string()
+  }
+}
+
+fn vertex_stream_generate_content_url_safe(project_id: &str, location: &str, model: &str) -> String {
+  let pid = normalize_vertex_project_id(project_id);
+  let loc = normalize_vertex_location_safe(location);
+  let m = model.trim();
+  format!(
+    "https://{loc}-aiplatform.googleapis.com/v1/projects/{pid}/locations/{loc}/publishers/google/models/{m}:streamGenerateContent"
+  )
+}
+
+fn extract_gemini_candidate_text(value: &Value) -> String {
+  value["candidates"]
+    .as_array()
+    .and_then(|items| items.first())
+    .and_then(|item| item.get("content"))
+    .and_then(|content| content.get("parts"))
+    .and_then(Value::as_array)
+    .map(|parts| {
+      parts
+        .iter()
+        .filter_map(|part| part.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("")
+    })
+    .unwrap_or_default()
+}
+
+fn collect_vertex_stream_text_safe(
+  value: &Value,
+  text: &mut String,
+  first_error: &mut Option<String>,
+) {
+  match value {
+    Value::Array(items) => {
+      for item in items {
+        collect_vertex_stream_text_safe(item, text, first_error);
+      }
+    }
+    _ => {
+      if first_error.is_none() {
+        *first_error = value
+          .get("error")
+          .and_then(|error| error.get("message").and_then(Value::as_str))
+          .map(str::to_string);
+      }
+      text.push_str(&extract_gemini_candidate_text(value));
+    }
+  }
+}
+
+fn parse_vertex_stream_text_safe(raw: &str) -> Result<String, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Err("Vertex returned an empty body".to_string());
+  }
+
+  let mut text = String::new();
+  let mut first_error = None;
+
+  if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+    collect_vertex_stream_text_safe(&value, &mut text, &mut first_error);
+  } else {
+    let stream = serde_json::Deserializer::from_str(trimmed).into_iter::<Value>();
+    for item in stream {
+      let value =
+        item.map_err(|err| format!("failed to parse Vertex stream response: {err}"))?;
+      collect_vertex_stream_text_safe(&value, &mut text, &mut first_error);
+    }
+  }
+
+  let normalized = text.trim().to_string();
+  if normalized.is_empty() {
+    Err(first_error.unwrap_or_else(|| "Vertex returned empty content".to_string()))
+  } else {
+    Ok(normalized)
   }
 }
 
@@ -895,6 +1052,94 @@ async fn api_error_details(response: Response) -> ApiErrorDetails {
 
 async fn api_error(response: Response) -> String {
   api_error_details(response).await.message
+}
+
+fn enhance_vertex_error_message_safe(api_message: &str) -> String {
+  let lower = api_message.to_ascii_lowercase();
+  if lower.contains("invalid authentication")
+    || lower.contains("oauth 2 access token")
+    || lower.contains("invalid credential")
+    || lower.contains("unauthenticated")
+  {
+    return format!(
+      "Vertex auth failed: {api_message}\n\nVertex REST requires an OAuth 2.0 Bearer token, not a Google AI Studio API key."
+    );
+  }
+  api_message.to_string()
+}
+
+fn vertex_debug_suffix_safe(context: &VertexDebugContext) -> String {
+  let mut lines = vec![
+    "Vertex diagnostics:".to_string(),
+    format!("endpoint={}", context.endpoint),
+    format!("projectId={}", context.project_id),
+    format!("location={}", context.location),
+    format!("model={}", context.selected_model),
+    format!("authMode={}", context.auth_mode),
+    format!("proxyEnv={}", context.proxy_env),
+  ];
+  if let Some(auth_source) = context.auth_source.as_deref() {
+    lines.push(format!("authSource={auth_source}"));
+  }
+  if let Some(token_uri) = context.token_uri.as_deref() {
+    lines.push(format!("tokenUri={token_uri}"));
+  }
+  if let Some(service_account_email) = context.service_account_email.as_deref() {
+    lines.push(format!("serviceAccountEmail={service_account_email}"));
+  }
+  format!("\n\n{}", lines.join("\n"))
+}
+
+fn clarify_vertex_error_safe(api_message: &str, context: &VertexDebugContext) -> String {
+  format!(
+    "{}{}",
+    enhance_vertex_error_message_safe(api_message).trim(),
+    vertex_debug_suffix_safe(context),
+  )
+}
+
+fn vertex_proxy_env_summary() -> String {
+  [
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+  ]
+  .into_iter()
+  .map(|name| match env::var(name) {
+    Ok(value) if !value.trim().is_empty() => format!("{name}=set(len={})", value.trim().len()),
+    _ => format!("{name}=unset"),
+  })
+  .collect::<Vec<_>>()
+  .join(", ")
+}
+
+fn vertex_auth_debug_suffix(
+  auth_mode: &str,
+  auth_source: Option<&str>,
+  token_uri: Option<&str>,
+  service_account_email: Option<&str>,
+  proxy_env: &str,
+) -> String {
+  let mut lines = vec![
+    "Vertex auth diagnostics:".to_string(),
+    format!("authMode={auth_mode}"),
+    format!("proxyEnv={proxy_env}"),
+  ];
+  if let Some(auth_source) = auth_source.filter(|value| !value.is_empty()) {
+    lines.push(format!("authSource={auth_source}"));
+  }
+  if let Some(token_uri) = token_uri.filter(|value| !value.is_empty()) {
+    lines.push(format!("tokenUri={token_uri}"));
+  }
+  if let Some(service_account_email) = service_account_email.filter(|value| !value.is_empty()) {
+    lines.push(format!("serviceAccountEmail={service_account_email}"));
+  }
+  format!("\n\n{}", lines.join("\n"))
 }
 
 fn clarify_claude_error(message: String, context: &ClaudeDebugContext) -> String {
@@ -1224,6 +1469,7 @@ async fn request_gemini(
 /// 与 Vertex 官方计费路径一致：`…/v1/projects/{project}/locations/{loc}/publishers/google/models/{model}:generateContent`
 const VERTEX_CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
 
+#[allow(dead_code)]
 async fn vertex_bearer_token(manual_token: &str) -> Result<String, String> {
   let trimmed = manual_token.trim();
   if !trimmed.is_empty() {
@@ -1241,6 +1487,7 @@ async fn vertex_bearer_token(manual_token: &str) -> Result<String, String> {
   Ok(token.as_str().to_string())
 }
 
+#[allow(dead_code)]
 async fn request_vertex_gemini(
   client: &Client,
   provider: &ProviderConfig,
@@ -1290,6 +1537,372 @@ async fn request_vertex_gemini(
       .unwrap_or("Vertex AI 返回了空内容")
       .to_string()
   })
+}
+
+const VERTEX_SERVICE_ACCOUNT_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+
+fn vertex_service_account_auth_mode(auth_token: &str, source: &VertexServiceAccountSource) -> String {
+  let source = match source {
+    VertexServiceAccountSource::InlineJson => "service_account_json",
+    VertexServiceAccountSource::FilePath => "service_account_file",
+  };
+  if !auth_token.is_empty() {
+    format!("{source}(authToken)")
+  } else {
+    format!("{source}(apiKey)")
+  }
+}
+
+fn normalize_vertex_service_account_path(manual: &str) -> String {
+  manual.trim().trim_matches('"').trim_matches('\'').to_string()
+}
+
+fn looks_like_vertex_service_account_path(manual: &str) -> bool {
+  let normalized = normalize_vertex_service_account_path(manual);
+  normalized.ends_with(".json") || normalized.contains('\\') || normalized.contains('/')
+}
+
+fn parse_vertex_service_account_credentials(
+  raw: &str,
+  label: &str,
+) -> Result<VertexServiceAccountCredentials, String> {
+  serde_json::from_str::<VertexServiceAccountCredentials>(raw)
+    .map_err(|err| format!("Vertex {label} is invalid: {err}"))
+}
+
+fn build_vertex_service_account_jwt(
+  credentials: &VertexServiceAccountCredentials,
+  signer: &gcp_auth::Signer,
+  scopes: &[&str],
+) -> Result<String, String> {
+  let iat = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_secs();
+  let claims = VertexServiceAccountJwtClaims {
+    iss: &credentials.client_email,
+    aud: &credentials.token_uri,
+    exp: iat.saturating_add(3595),
+    iat,
+    scope: scopes.join(" "),
+  };
+  let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","typ":"JWT"}"#);
+  let claims_json = serde_json::to_vec(&claims)
+    .map_err(|err| format!("Vertex service account claims serialization failed: {err}"))?;
+  let claims = URL_SAFE_NO_PAD.encode(claims_json);
+  let signing_input = format!("{header}.{claims}");
+  let signature = signer
+    .sign(signing_input.as_bytes())
+    .map_err(|err| format!("Vertex service account JWT signing failed: {err}"))?;
+  Ok(format!(
+    "{signing_input}.{}",
+    URL_SAFE_NO_PAD.encode(signature)
+  ))
+}
+
+async fn fetch_vertex_service_account_bearer(
+  client: &Client,
+  credentials: &VertexServiceAccountCredentials,
+  signer: &gcp_auth::Signer,
+  scopes: &[&str],
+  auth_mode: &str,
+  auth_source: &str,
+  proxy_env: &str,
+) -> Result<String, String> {
+  let jwt = build_vertex_service_account_jwt(credentials, signer, scopes)?;
+  let response = client
+    .post(credentials.token_uri.trim())
+    .form(&[
+      ("grant_type", VERTEX_SERVICE_ACCOUNT_GRANT_TYPE),
+      ("assertion", jwt.as_str()),
+    ])
+    .send()
+    .await
+    .map_err(|err| {
+      let detail = chain_transport_error(&err);
+      let mut message = format!(
+        "Vertex service account token fetch failed while connecting to {}: {}. The service account JSON/path was loaded successfully, so the failure happened while exchanging the signed JWT for an OAuth access token.",
+        credentials.token_uri.trim(),
+        detail
+      );
+      if err.is_timeout() || detail.contains("timed out") {
+        message.push_str(
+          " This usually means the desktop app cannot reach Google's OAuth endpoint in time. Check system proxy/VPN, DNS, firewall, or corporate network policy.",
+        );
+      } else if err.is_connect() || detail.contains("dns") || detail.contains("connect") {
+        message.push_str(
+          " This usually points to a proxy, DNS, firewall, or outbound network restriction rather than a bad JSON file.",
+        );
+      } else if detail.contains("certificate") || detail.contains("Certificate") {
+        message.push_str(
+          " Certificate interception may also cause this. Confirm the current network allows rustls/native-roots HTTPS traffic.",
+        );
+      }
+      message.push_str(&vertex_auth_debug_suffix(
+        auth_mode,
+        Some(auth_source),
+        Some(credentials.token_uri.trim()),
+        Some(credentials.client_email.trim()),
+        proxy_env,
+      ));
+      message
+    })?;
+
+  let status = response.status();
+  let body = response
+    .text()
+    .await
+    .unwrap_or_else(|err| format!("failed to read token endpoint body: {err}"));
+  if !status.is_success() {
+    let body = body.trim();
+    let detail = if body.is_empty() { "<empty body>" } else { body };
+    return Err(format!(
+      "Vertex service account token fetch failed: HTTP {} from {}: {}. The service account JSON/path was loaded successfully, so the failure happened during OAuth token exchange.{}",
+      status,
+      credentials.token_uri.trim(),
+      detail,
+      vertex_auth_debug_suffix(
+        auth_mode,
+        Some(auth_source),
+        Some(credentials.token_uri.trim()),
+        Some(credentials.client_email.trim()),
+        proxy_env,
+      )
+    ));
+  }
+
+  let parsed = serde_json::from_str::<VertexServiceAccountTokenResponse>(&body).map_err(|err| {
+    format!(
+      "Vertex service account token response parse failed: {}. Raw body: {}.{}",
+      err,
+      body.trim(),
+      vertex_auth_debug_suffix(
+        auth_mode,
+        Some(auth_source),
+        Some(credentials.token_uri.trim()),
+        Some(credentials.client_email.trim()),
+        proxy_env,
+      )
+    )
+  })?;
+  let access_token = parsed.access_token.trim();
+  if access_token.is_empty() {
+    return Err(format!(
+      "Vertex service account token response did not include a usable access_token.{}",
+      vertex_auth_debug_suffix(
+        auth_mode,
+        Some(auth_source),
+        Some(credentials.token_uri.trim()),
+        Some(credentials.client_email.trim()),
+        proxy_env,
+      )
+    ));
+  }
+  Ok(access_token.to_string())
+}
+
+async fn resolve_vertex_auth_safe(
+  client: &Client,
+  provider: &ProviderConfig,
+) -> Result<VertexResolvedAuth, String> {
+  let auth_token = provider.auth_token.trim();
+  let api_key = provider.api_key.trim();
+  let manual = if !auth_token.is_empty() { auth_token } else { api_key };
+  let scopes = [VERTEX_CLOUD_PLATFORM_SCOPE];
+  let proxy_env = vertex_proxy_env_summary();
+
+  if !manual.is_empty() {
+    if manual.starts_with("AIza") {
+      return Err(
+        "Vertex requires an OAuth Bearer token. Google AI Studio API keys starting with AIza are not valid here."
+          .to_string(),
+      );
+    }
+
+    if manual.trim_start().starts_with('{') {
+      let credentials = parse_vertex_service_account_credentials(manual, "service account JSON")?;
+      let service_account = gcp_auth::CustomServiceAccount::from_json(manual)
+        .map_err(|err| format!("Vertex service account JSON is invalid: {err}"))?;
+      let auth_mode =
+        vertex_service_account_auth_mode(auth_token, &VertexServiceAccountSource::InlineJson);
+      let auth_source = if !auth_token.is_empty() {
+        "inline_json(authToken)"
+      } else {
+        "inline_json(apiKey)"
+      };
+      let token = fetch_vertex_service_account_bearer(
+        client,
+        &credentials,
+        service_account.signer(),
+        &scopes,
+        &auth_mode,
+        auth_source,
+        &proxy_env,
+      )
+      .await?;
+      return Ok(VertexResolvedAuth {
+        bearer: token,
+        auth_mode,
+        auth_source: Some(auth_source.to_string()),
+        token_uri: Some(credentials.token_uri.trim().to_string()),
+        service_account_email: Some(credentials.client_email.trim().to_string()),
+        proxy_env,
+      });
+    }
+
+    let manual_path = normalize_vertex_service_account_path(manual);
+    if Path::new(&manual_path).is_file() {
+      let file_contents = fs::read_to_string(&manual_path).map_err(|err| {
+        format!("Vertex service account file could not be read: {err}")
+      })?;
+      let credentials =
+        parse_vertex_service_account_credentials(&file_contents, "service account file")?;
+      let service_account =
+        gcp_auth::CustomServiceAccount::from_file(&manual_path).map_err(|err| {
+          format!("Vertex service account file could not be loaded: {err}")
+        })?;
+      let auth_mode =
+        vertex_service_account_auth_mode(auth_token, &VertexServiceAccountSource::FilePath);
+      let auth_source = if !auth_token.is_empty() {
+        "file_path(authToken)"
+      } else {
+        "file_path(apiKey)"
+      };
+      let token = fetch_vertex_service_account_bearer(
+        client,
+        &credentials,
+        service_account.signer(),
+        &scopes,
+        &auth_mode,
+        auth_source,
+        &proxy_env,
+      )
+      .await?;
+      return Ok(VertexResolvedAuth {
+        bearer: token,
+        auth_mode,
+        auth_source: Some(auth_source.to_string()),
+        token_uri: Some(credentials.token_uri.trim().to_string()),
+        service_account_email: Some(credentials.client_email.trim().to_string()),
+        proxy_env,
+      });
+    }
+    if looks_like_vertex_service_account_path(manual) {
+      return Err(format!(
+        "Vertex service account file was not found: {}.{}",
+        manual_path,
+        vertex_auth_debug_suffix(
+          if !auth_token.is_empty() {
+            "service_account_file(authToken)"
+          } else {
+            "service_account_file(apiKey)"
+          },
+          Some(if !auth_token.is_empty() {
+            "file_path(authToken)"
+          } else {
+            "file_path(apiKey)"
+          }),
+          None,
+          None,
+          &proxy_env,
+        )
+      ));
+    }
+
+    return Ok(VertexResolvedAuth {
+      bearer: manual.to_string(),
+      auth_mode: if !auth_token.is_empty() {
+        "manual_bearer(authToken)".to_string()
+      } else {
+        "manual_bearer(apiKey)".to_string()
+      },
+      auth_source: None,
+      token_uri: None,
+      service_account_email: None,
+      proxy_env,
+    });
+  }
+
+  let provider = gcp_auth::provider()
+    .await
+    .map_err(|err| {
+      format!(
+        "Vertex local auth init failed: {err}. Provide an OAuth Bearer token, a service account JSON path/JSON content, set GOOGLE_APPLICATION_CREDENTIALS, or run `gcloud auth application-default login`.{}",
+        vertex_auth_debug_suffix("adc(gcp_auth provider)", Some("local_provider_chain"), None, None, &proxy_env)
+      )
+    })?;
+  let token = provider
+    .token(&scopes)
+    .await
+    .map_err(|err| {
+      format!(
+        "Vertex access token fetch failed: {err}. If you are not using ADC, enter an OAuth Bearer token or a service account JSON path/JSON content in settings.{}",
+        vertex_auth_debug_suffix("adc(gcp_auth provider)", Some("local_provider_chain"), None, None, &proxy_env)
+      )
+    })?;
+
+  Ok(VertexResolvedAuth {
+    bearer: token.as_str().to_string(),
+    auth_mode: "adc(gcp_auth provider)".to_string(),
+    auth_source: Some("local_provider_chain".to_string()),
+    token_uri: None,
+    service_account_email: None,
+    proxy_env,
+  })
+}
+
+async fn request_vertex_gemini_stream(
+  client: &Client,
+  provider: &ProviderConfig,
+  model: &str,
+  contents: Value,
+) -> Result<String, String> {
+  let project_id = normalize_vertex_project_id(&provider.project_id);
+  if project_id.is_empty() {
+    return Err("Vertex project_id is required".to_string());
+  }
+
+  let auth = resolve_vertex_auth_safe(client, provider).await?;
+  let location = normalize_vertex_location_safe(provider.base_url.as_deref().unwrap_or("us-central1"));
+  let url = vertex_stream_generate_content_url_safe(&project_id, &location, model.trim());
+  let context = VertexDebugContext {
+    endpoint: url.clone(),
+    project_id: project_id.clone(),
+    location: location.clone(),
+    selected_model: model.trim().to_string(),
+    auth_mode: auth.auth_mode.clone(),
+    auth_source: auth.auth_source.clone(),
+    token_uri: auth.token_uri.clone(),
+    service_account_email: auth.service_account_email.clone(),
+    proxy_env: auth.proxy_env.clone(),
+  };
+
+  let response = client
+    .post(&url)
+    .bearer_auth(auth.bearer.trim())
+    .json(&json!({ "contents": contents }))
+    .send()
+    .await
+    .map_err(|err| {
+      let detail = chain_transport_error(&err);
+      clarify_vertex_error_safe(
+        &format!("Vertex request failed before HTTP response: {detail}"),
+        &context,
+      )
+    })?;
+
+  if !response.status().is_success() {
+    let msg = api_error(response).await;
+    return Err(clarify_vertex_error_safe(&msg, &context));
+  }
+
+  let raw = response
+    .text()
+    .await
+    .map_err(|err| clarify_vertex_error_safe(&format!("failed to read Vertex response: {err}"), &context))?;
+
+  parse_vertex_stream_text_safe(&raw)
+    .map_err(|message| clarify_vertex_error_safe(&message, &context))
 }
 
 async fn chat_with_claude(
@@ -1576,6 +2189,15 @@ pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, S
 
   match provider_id.as_str() {
     "gemini" => {
+      if uses_cli(&provider) {
+        return crate::gemini_cli::chat_with_gemini_cli(
+          &provider,
+          &payload.active_model,
+          &payload.messages,
+          payload.workspace.as_deref(),
+        )
+        .await;
+      }
       let api_key = require_api_key(&provider)?;
       request_gemini(
         &client,
@@ -1587,7 +2209,7 @@ pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, S
       .await
     }
     "vertex_ai" => {
-      request_vertex_gemini(
+      request_vertex_gemini_stream(
         &client,
         &provider,
         &payload.active_model,
@@ -1601,6 +2223,7 @@ pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, S
           &provider,
           &payload.active_model,
           &payload.messages,
+          payload.workspace.as_deref(),
         )
         .await;
       }
@@ -1623,6 +2246,25 @@ pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, S
       .await
     }
     "openai" | "custom" => {
+      if uses_cli(&provider) {
+        if provider_id == "openai" {
+          return crate::codex_cli::chat_with_codex_cli(
+            &provider,
+            &payload.active_model,
+            &payload.messages,
+            payload.workspace.as_deref(),
+          )
+          .await;
+        }
+
+        return crate::claude_cli::chat_with_claude_cli(
+          &provider,
+          &payload.active_model,
+          &payload.messages,
+          payload.workspace.as_deref(),
+        )
+        .await;
+      }
       let api_key = require_api_key(&provider)?;
       let messages = if uses_responses_api(&provider) {
         responses_input_messages(&payload.messages)
@@ -1654,6 +2296,14 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
     {
       return Ok("New Chat".to_string());
     }
+  } else if provider_id == "gemini" {
+    if !uses_cli(&provider) && provider.api_key.trim().is_empty() {
+      return Ok("New Chat".to_string());
+    }
+  } else if provider_id == "openai" || provider_id == "custom" {
+    if !uses_cli(&provider) && provider.api_key.trim().is_empty() {
+      return Ok("New Chat".to_string());
+    }
   } else if provider_id == "vertex_ai" {
     if provider.project_id.trim().is_empty() {
       return Ok("New Chat".to_string());
@@ -1670,6 +2320,10 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
   let prompt = text_prompt_for_title(&payload.first_message);
   let title = match provider_id.as_str() {
     "gemini" => {
+      if uses_cli(&provider) {
+        let model = model_or_default(&provider, "gemini-2.5-flash");
+        crate::gemini_cli::title_with_gemini_cli(&provider, &model, &prompt).await?
+      } else {
       let api_key = provider.api_key.trim().to_string();
       let model = model_or_default(&provider, "gemini-2.5-flash");
       request_gemini(
@@ -1683,10 +2337,11 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
         })]),
       )
       .await?
+      }
     }
     "vertex_ai" => {
       let model = model_or_default(&provider, "gemini-2.5-flash");
-      request_vertex_gemini(
+      request_vertex_gemini_stream(
         &client,
         &provider,
         &model,
@@ -1726,29 +2381,37 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
       }
     }
     "openai" | "custom" => {
-      let api_key = provider.api_key.trim().to_string();
       let model = model_or_default(&provider, "gpt-4o-mini");
-      let messages = if uses_responses_api(&provider) {
-        Value::Array(vec![json!({
-          "role": "user",
-          "content": prompt,
-        })])
+      if uses_cli(&provider) {
+        if provider_id == "openai" {
+          crate::codex_cli::title_with_codex_cli(&provider, &model, &prompt).await?
+        } else {
+          crate::claude_cli::title_with_claude_cli(&provider, &model, &prompt).await?
+        }
       } else {
-        Value::Array(vec![json!({
-          "role": "user",
-          "content": prompt,
-        })])
-      };
-      chat_with_openai_compatible(
-        &client,
-        &provider_id,
-        &provider,
-        &api_key,
-        &model,
-        messages,
-        None,
-      )
-      .await?
+        let api_key = provider.api_key.trim().to_string();
+        let messages = if uses_responses_api(&provider) {
+          Value::Array(vec![json!({
+            "role": "user",
+            "content": prompt,
+          })])
+        } else {
+          Value::Array(vec![json!({
+            "role": "user",
+            "content": prompt,
+          })])
+        };
+        chat_with_openai_compatible(
+          &client,
+          &provider_id,
+          &provider,
+          &api_key,
+          &model,
+          messages,
+          None,
+        )
+        .await?
+      }
     }
     _ => "New Chat".to_string(),
   };
@@ -1789,7 +2452,7 @@ mod tests {
   use super::{
     claude_messages_body, claude_messages_url,
     claude_metadata_user_id, extract_model_ids, extract_text_from_claude_sse,
-    extract_text_from_responses_sse,
+    extract_text_from_responses_sse, parse_vertex_stream_text_safe,
   };
   use crate::models::ProviderConfig;
   use serde_json::json;
@@ -1828,6 +2491,30 @@ data: {"type":"message_stop"}
 "#;
 
     assert_eq!(extract_text_from_claude_sse(raw), "Hello world".to_string());
+  }
+
+  #[test]
+  fn extracts_text_from_vertex_stream_array_payload() {
+    let raw = r#"[
+      {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]},
+      {"candidates":[{"content":{"parts":[{"text":" world"}]}}]}
+    ]"#;
+
+    assert_eq!(
+      parse_vertex_stream_text_safe(raw).unwrap(),
+      "Hello world".to_string()
+    );
+  }
+
+  #[test]
+  fn extracts_text_from_vertex_stream_concatenated_objects() {
+    let raw = r#"{"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}
+{"candidates":[{"content":{"parts":[{"text":" world"}]}}]}"#;
+
+    assert_eq!(
+      parse_vertex_stream_text_safe(raw).unwrap(),
+      "Hello world".to_string()
+    );
   }
 
   #[test]

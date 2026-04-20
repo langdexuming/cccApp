@@ -1,10 +1,14 @@
 mod app_state;
 mod chat;
 mod claude_cli;
+mod cli_session_store;
+mod codex_cli;
+mod gemini_cli;
 mod git;
 mod local_config;
 mod models;
 mod project_analysis;
+mod workspace;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -27,7 +31,13 @@ pub fn run() {
       chat::generate_chat_title,
       chat::fetch_provider_models,
       git::git_sync,
-      project_analysis::analyze_project
+      project_analysis::analyze_project,
+      project_analysis::read_project_context,
+      project_analysis::generate_project_text,
+      project_analysis::apply_project_fix,
+      project_analysis::get_kairos_logs,
+      workspace::normalize_workspace_path,
+      workspace::open_workspace_path
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

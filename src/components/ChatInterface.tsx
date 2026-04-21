@@ -1,5 +1,5 @@
-﻿import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings, Bug, CheckCircle2, FileText, Rocket, Box, FolderInput } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Settings, Bug, CheckCircle2, FileText, Rocket, Box, FolderInput } from 'lucide-react';
 import {
   Message as MessageType,
   Chat,
@@ -468,8 +468,9 @@ export function ChatInterface({
   return (
     <div className="flex-1 flex flex-col h-full bg-bg-main relative overflow-hidden">
       {isTauriRuntime() && (
-        <div className="absolute top-[15px] right-[20px] text-[10px] text-text-secondary bg-[#F0F0F0] px-2 py-1 rounded">
-          TAURI
+        <div className="absolute top-[15px] right-[20px] flex items-center gap-2 px-3 py-1.5 bg-orange-500 rounded-xl shadow-lg animate-fade-in border border-orange-400/30">
+          <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
+          <span className="text-[10px] font-bold text-white tracking-widest uppercase">Desktop Client</span>
         </div>
       )}
       
@@ -817,7 +818,7 @@ export function ChatInterface({
               animate={{ opacity: 1, y: 0 }}
               className="w-16 h-16 rounded-2xl bg-orange-50 flex items-center justify-center"
             >
-              <BotIcon className="w-10 h-10 text-accent-theme" />
+              <Sparkles className="w-10 h-10 text-accent-theme animate-pulse" />
             </motion.div>
             <div className="space-y-2 max-w-sm">
               <h1 className="text-2xl font-semibold text-text-primary">今天我能帮您做什么？</h1>
@@ -1126,16 +1127,4 @@ export function ChatInterface({
   );
 }
 
-function BotIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M12 8V4H8" />
-      <rect width="16" height="12" x="4" y="8" rx="2" />
-      <path d="M2 14h2" />
-      <path d="M20 14h2" />
-      <path d="M15 13v2" />
-      <path d="M9 13v2" />
-    </svg>
-  );
-}
 

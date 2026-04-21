@@ -3,11 +3,12 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::BufReader;
 use tokio::process::Command;
 
 use crate::cli_session_store;
 use crate::models::{Message, ProviderConfig};
+use crate::text_decode::{collect_decoded_output, read_decoded_line};
 
 const PROVIDER_ID: &str = "gemini";
 
@@ -198,33 +199,16 @@ async fn invoke_gemini_cli(
     .take()
     .ok_or_else(|| "Gemini CLI did not expose stderr.".to_string())?;
 
-  let stderr_task = tokio::spawn(async move {
-    let mut reader = BufReader::new(stderr);
-    let mut buf = String::new();
-    let mut line = String::new();
-    loop {
-      line.clear();
-      match reader.read_line(&mut line).await {
-        Ok(0) => break,
-        Ok(_) => {
-          buf.push_str(&line);
-          if buf.len() > 8192 {
-            buf.drain(..buf.len() - 8192);
-          }
-        }
-        Err(_) => break,
-      }
-    }
-    buf
-  });
+  let stderr_task = tokio::spawn(async move { collect_decoded_output(stderr, 8192).await });
 
-  let mut reader = BufReader::new(stdout).lines();
+  let mut reader = BufReader::new(stdout);
+  let mut line_buf = Vec::new();
   let mut text = String::new();
   let mut session = None;
   let mut last_error = None;
   let mut non_json_stdout = String::new();
 
-  while let Ok(Some(raw_line)) = reader.next_line().await {
+  while let Ok(Some(raw_line)) = read_decoded_line(&mut reader, &mut line_buf).await {
     let trimmed = raw_line.trim();
     if trimmed.is_empty() {
       continue;

@@ -5,11 +5,11 @@ import { DEFAULT_SETTINGS } from '../constants';
 import { Message } from './Message';
 import { ProjectTimeline } from './ProjectTimeline';
 import { streamChat, generateTitle } from '../services/chatService';
-import { isTauriRuntime, normalizeWorkspacePath, openWorkspacePath } from '../lib/desktop';
+import { isTauriRuntime, normalizeWorkspacePath, openWorkspacePath, pickWorkspacePath } from '../lib/desktop';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
-import { looksLikeWorkspacePath } from '../lib/workspace';
+import { looksLikeWorkspacePath, normalizeWorkspaceValue } from '../lib/workspace';
 
 const AI_PROMPTS = [
   { icon: <Terminal className="w-3" />, text: "解释这段代码的工作原理", color: "text-blue-600 bg-blue-50/50" },
@@ -33,13 +33,15 @@ interface ChatInterfaceProps {
   chat: Chat | null;
   onUpdateChat: (chat: Chat) => void;
   onPatchChat?: (chatId: string, patch: Partial<Chat>) => void;
-  onNewChat: () => void;
+  onNewChat: (workspace?: string) => void;
   chats: Chat[];
   onSelectChat: (id: string) => void;
   isSidebarVisible: boolean;
   onToggleSidebar: () => void;
   onIsTypingChange?: (isTyping: boolean) => void;
   settings: AppSettings;
+  pendingWorkspace?: string;
+  onPendingWorkspaceChange?: (workspace: string) => void;
   onUpdateSettings: (settings: AppSettings) => void;
   onOpenSettings: () => void;
   isDesignPanelOpen: boolean;
@@ -59,6 +61,8 @@ export function ChatInterface({
   onToggleSidebar,
   onIsTypingChange,
   settings,
+  pendingWorkspace,
+  onPendingWorkspaceChange,
   onUpdateSettings,
   onOpenSettings,
   isDesignPanelOpen,
@@ -76,6 +80,7 @@ export function ChatInterface({
   );
   const [selectedEffort, setSelectedEffort] = useState<Chat['effort']>(chat?.effort || 'medium');
   const [workspaceDraft, setWorkspaceDraft] = useState('');
+  const [isPickingWorkspace, setIsPickingWorkspace] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -126,10 +131,9 @@ export function ChatInterface({
   }, [activeProvider.models, chat?.effort, chat?.id, chat?.model, chat?.provider, settings.activeProvider]);
 
   useEffect(() => {
-    if (chat) {
-      setWorkspaceDraft(chat.workspace?.trim() ?? '');
-    }
-  }, [chat?.id, chat?.workspace]);
+    const nextDraft = chat?.workspace?.trim() ?? normalizeWorkspaceValue(pendingWorkspace);
+    setWorkspaceDraft(nextDraft);
+  }, [chat?.id, chat?.workspace, pendingWorkspace]);
 
   useEffect(() => {
     onIsTypingChange?.(isLoading);
@@ -265,6 +269,8 @@ export function ChatInterface({
     if (!trimmed) {
       if (chat?.workspace) {
         onPatchChat?.(chat.id, { workspace: undefined });
+      } else {
+        onPendingWorkspaceChange?.('');
       }
       setWorkspaceDraft('');
       return undefined;
@@ -275,7 +281,7 @@ export function ChatInterface({
       try {
         const normalized = await normalizeWorkspacePath(trimmed);
         if (normalized?.trim()) {
-          nextWorkspace = normalized.trim();
+          nextWorkspace = normalizeWorkspaceValue(normalized.trim());
         }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : String(error));
@@ -285,8 +291,61 @@ export function ChatInterface({
     setWorkspaceDraft(nextWorkspace);
     if (chat && nextWorkspace !== (chat.workspace ?? '').trim()) {
       onPatchChat?.(chat.id, { workspace: nextWorkspace });
+    } else if (!chat) {
+      onPendingWorkspaceChange?.(nextWorkspace);
     }
     return nextWorkspace || undefined;
+  };
+
+  const handlePickWorkspace = async (): Promise<string | undefined> => {
+    if (!isTauriRuntime() || isPickingWorkspace) {
+      return undefined;
+    }
+
+    setIsPickingWorkspace(true);
+    setErrorMessage(null);
+
+    try {
+      const selected = await pickWorkspacePath();
+      if (!selected?.trim()) {
+        return undefined;
+      }
+
+      const normalized = await normalizeWorkspacePath(selected);
+      const nextWorkspace = normalizeWorkspaceValue(normalized?.trim() || selected.trim());
+      setWorkspaceDraft(nextWorkspace);
+
+      if (chat && nextWorkspace !== (chat.workspace ?? '').trim()) {
+        onPatchChat?.(chat.id, {workspace: nextWorkspace});
+      } else if (!chat) {
+        onPendingWorkspaceChange?.(nextWorkspace);
+      }
+      return nextWorkspace;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      return undefined;
+    } finally {
+      setIsPickingWorkspace(false);
+    }
+  };
+
+  const handleOpenWorkspace = async () => {
+    setErrorMessage(null);
+
+    try {
+      const nextWorkspace = await commitWorkspaceDraft();
+      if (!nextWorkspace) {
+        const selectedWorkspace = await handlePickWorkspace();
+        if (selectedWorkspace) {
+          await openWorkspacePath(selectedWorkspace);
+        }
+        return;
+      }
+
+      await openWorkspacePath(nextWorkspace);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -412,9 +471,9 @@ export function ChatInterface({
             </h2>
             <ChevronDown className="w-3.5 h-3.5 text-text-secondary group-hover:text-text-primary transition-colors" />
           </div>
-          {(chat || workspaceDraft) && (
+          {isTauriRuntime() && (
             <div
-              className="hidden sm:flex items-center gap-1.5 min-w-0 max-w-[240px] lg:max-w-sm ml-1"
+              className="flex items-center gap-1.5 min-w-0 max-w-[240px] lg:max-w-sm ml-1"
               title="当前会话关联的工作区路径"
             >
               <FolderInput className="w-3.5 h-3.5 text-text-secondary shrink-0" aria-hidden />
@@ -434,14 +493,20 @@ export function ChatInterface({
               <button
                 type="button"
                 onClick={() => {
-                  if (!workspaceDraft.trim()) {
-                    return;
-                  }
-                  void openWorkspacePath(workspaceDraft.trim()).catch((error) => {
-                    setErrorMessage(error instanceof Error ? error.message : String(error));
-                  });
+                  void handlePickWorkspace();
                 }}
-                disabled={!workspaceDraft.trim() || !looksLikeWorkspacePath(workspaceDraft)}
+                disabled={isPickingWorkspace}
+                className="shrink-0 rounded border border-border-theme bg-zinc-50 px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                title="选择工作区"
+              >
+                {isPickingWorkspace ? '选择中' : '选择'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleOpenWorkspace();
+                }}
+                disabled={isPickingWorkspace || (workspaceDraft.trim() ? !looksLikeWorkspacePath(workspaceDraft) : false)}
                 className="shrink-0 rounded border border-border-theme bg-zinc-50 px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
                 title="打开工作区"
               >
@@ -707,6 +772,50 @@ export function ChatInterface({
                 我是 Claude，一个由 Anthropic 构建的 AI 助手，致力于提供安全、准确且有帮助的支持。
               </p>
             </div>
+            {isTauriRuntime() && (
+              <div className="w-full max-w-xl rounded-3xl border border-border-theme bg-white/90 p-4 text-left shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-text-primary">工作区</div>
+                    <div className="text-xs text-text-secondary truncate" title={workspaceDraft || '尚未选择工作区'}>
+                      {workspaceDraft || '尚未选择工作区，选择后新对话会自动绑定到该目录'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handlePickWorkspace();
+                      }}
+                      disabled={isPickingWorkspace}
+                      className="rounded-xl border border-border-theme px-3 py-2 text-xs font-bold text-text-secondary transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isPickingWorkspace ? '选择中' : '选择工作区'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleOpenWorkspace();
+                      }}
+                      disabled={isPickingWorkspace || (workspaceDraft.trim() ? !looksLikeWorkspacePath(workspaceDraft) : false)}
+                      className="rounded-xl bg-accent-theme px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      打开工作区
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {errorMessage && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full max-w-xl rounded-3xl border border-red-100 bg-red-50 p-5 text-left shadow-sm"
+              >
+                <div className="text-sm font-bold text-red-900">工作区操作失败</div>
+                <div className="mt-2 text-sm text-red-700 leading-relaxed">{errorMessage}</div>
+              </motion.div>
+            )}
           </div>
         ) : (
           <div className="flex flex-col pb-40">

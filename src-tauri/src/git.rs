@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use crate::models::{GitSyncPayload, GitSyncResponse};
+use crate::text_decode::decode_trimmed;
 
 fn find_git_root(start: &Path) -> Option<PathBuf> {
   for candidate in start.ancestors() {
@@ -48,11 +49,11 @@ fn ensure_origin(repo_root: &Path, repo_url: &str) -> Result<(), String> {
 
   match run_git(repo_root, &["remote", "get-url", "origin"]) {
     Ok(output) if output.status.success() => {
-      let current_url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+      let current_url = decode_trimmed(&output.stdout);
       if current_url != repo_url {
         let output = run_git(repo_root, &["remote", "set-url", "origin", repo_url])?;
         if !output.status.success() {
-          let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+          let stderr = decode_trimmed(&output.stderr);
           return Err(if stderr.is_empty() {
             "更新 origin 地址失败".to_string()
           } else {
@@ -65,7 +66,7 @@ fn ensure_origin(repo_root: &Path, repo_url: &str) -> Result<(), String> {
     _ => {
       let output = run_git(repo_root, &["remote", "add", "origin", repo_url])?;
       if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stderr = decode_trimmed(&output.stderr);
         return Err(if stderr.is_empty() {
           "添加 origin 地址失败".to_string()
         } else {
@@ -95,8 +96,8 @@ pub fn git_sync(payload: GitSyncPayload) -> Result<GitSyncResponse, String> {
   };
 
   let output = run_git(&repo_root, &args)?;
-  let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-  let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+  let stdout = decode_trimmed(&output.stdout);
+  let stderr = decode_trimmed(&output.stderr);
 
   if !output.status.success() {
     let combined = match (stdout.is_empty(), stderr.is_empty()) {

@@ -56,6 +56,9 @@ export interface PersistedAppState {
   chats: Chat[];
   settings: AppSettings;
   activeChatId: string | null;
+  pendingWorkspace?: string;
+  sidebarCollapsedSections?: Record<string, boolean>;
+  pinnedWorkspaces?: string[];
 }
 
 export type ProjectPhase = 'planning' | 'design' | 'development' | 'testing' | 'deployment' | 'maintenance';

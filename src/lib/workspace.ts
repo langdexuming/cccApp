@@ -1,5 +1,24 @@
-export function looksLikeWorkspacePath(value: string | null | undefined): boolean {
+const UNGROUPED_LABEL = '本地 / 未分组';
+
+export function normalizeWorkspaceValue(value: string | null | undefined): string {
   const text = value?.trim();
+  if (!text) {
+    return '';
+  }
+
+  if (text.startsWith('\\\\?\\UNC\\')) {
+    return `\\\\${text.slice('\\\\?\\UNC\\'.length)}`;
+  }
+
+  if (text.startsWith('\\\\?\\')) {
+    return text.slice('\\\\?\\'.length);
+  }
+
+  return text;
+}
+
+export function looksLikeWorkspacePath(value: string | null | undefined): boolean {
+  const text = normalizeWorkspaceValue(value);
   if (!text) {
     return false;
   }
@@ -14,9 +33,9 @@ export function looksLikeWorkspacePath(value: string | null | undefined): boolea
 }
 
 export function workspaceBaseName(value: string | null | undefined): string {
-  const text = value?.trim();
+  const text = normalizeWorkspaceValue(value);
   if (!text) {
-    return '本地 / 未分组';
+    return UNGROUPED_LABEL;
   }
 
   const normalized = text.replace(/[\\/]+$/, '');
@@ -25,9 +44,9 @@ export function workspaceBaseName(value: string | null | undefined): string {
 }
 
 export function workspaceGroupLabel(value: string | null | undefined): string {
-  const text = value?.trim();
+  const text = normalizeWorkspaceValue(value);
   if (!text) {
-    return '本地 / 未分组';
+    return UNGROUPED_LABEL;
   }
 
   if (!looksLikeWorkspacePath(text)) {
@@ -38,9 +57,10 @@ export function workspaceGroupLabel(value: string | null | undefined): string {
 }
 
 export function workspaceTooltip(value: string | null | undefined): string | undefined {
-  const text = value?.trim();
-  if (!text) {
-    return undefined;
-  }
-  return text;
+  const text = normalizeWorkspaceValue(value);
+  return text || undefined;
+}
+
+export function ungroupedWorkspaceLabel(): string {
+  return UNGROUPED_LABEL;
 }

@@ -9,6 +9,12 @@ pub struct PersistedAppState {
   pub chats: Vec<Chat>,
   pub settings: AppSettings,
   pub active_chat_id: Option<String>,
+  #[serde(default)]
+  pub pending_workspace: Option<String>,
+  #[serde(default)]
+  pub sidebar_collapsed_sections: HashMap<String, bool>,
+  #[serde(default)]
+  pub pinned_workspaces: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

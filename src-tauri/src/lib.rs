@@ -8,6 +8,7 @@ mod git;
 mod local_config;
 mod models;
 mod project_analysis;
+mod text_decode;
 mod workspace;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,6 +38,7 @@ pub fn run() {
       project_analysis::apply_project_fix,
       project_analysis::get_kairos_logs,
       workspace::normalize_workspace_path,
+      workspace::pick_workspace_path,
       workspace::open_workspace_path
     ])
     .run(tauri::generate_context!())

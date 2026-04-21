@@ -98,6 +98,13 @@ export async function normalizeWorkspacePath(path: string): Promise<string | nul
   return invokeCommand<string>('normalize_workspace_path', {path});
 }
 
+export async function pickWorkspacePath(): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invokeCommand<string | null>('pick_workspace_path');
+}
+
 export async function openWorkspacePath(path: string): Promise<void> {
   if (!isTauriRuntime()) {
     return;

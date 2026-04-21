@@ -8,6 +8,7 @@ import {AutoUpdate} from './components/AutoUpdate';
 import type {AppSettings, Chat} from './types';
 import {cn} from './lib/utils';
 import {loadPersistedState, savePersistedState} from './lib/desktop';
+import {normalizeWorkspaceValue} from './lib/workspace';
 import {
   fetchLocalToolConfig,
   mergeLocalToolConfigIntoSettings,
@@ -17,6 +18,9 @@ import {createDefaultSettings, normalizeSettings} from './lib/providerCatalog';
 export default function App() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [pendingWorkspace, setPendingWorkspace] = useState<string>('');
+  const [sidebarCollapsedSections, setSidebarCollapsedSections] = useState<Record<string, boolean>>({});
+  const [pinnedWorkspaces, setPinnedWorkspaces] = useState<string[]>([]);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -35,8 +39,18 @@ export default function App() {
           return;
         }
         if (persisted) {
-          setChats(persisted.chats || []);
+          setChats(
+            (persisted.chats || []).map((chat) => ({
+              ...chat,
+              workspace: normalizeWorkspaceValue(chat.workspace),
+            })),
+          );
           setSettings(normalizeSettings(persisted.settings));
+          setPendingWorkspace(normalizeWorkspaceValue(persisted.pendingWorkspace));
+          setSidebarCollapsedSections(persisted.sidebarCollapsedSections || {});
+          setPinnedWorkspaces(
+            (persisted.pinnedWorkspaces || []).map((workspace) => normalizeWorkspaceValue(workspace)),
+          );
           const nextActiveChatId =
             persisted.activeChatId && persisted.chats.some((item) => item.id === persisted.activeChatId)
               ? persisted.activeChatId
@@ -49,7 +63,12 @@ export default function App() {
         if (savedChats) {
           try {
             const parsed = JSON.parse(savedChats) as Chat[];
-            setChats(parsed);
+            setChats(
+              parsed.map((chat) => ({
+                ...chat,
+                workspace: normalizeWorkspaceValue(chat.workspace),
+              })),
+            );
             if (parsed.length > 0) {
               setActiveChatId(parsed[0].id);
             }
@@ -64,6 +83,28 @@ export default function App() {
             setSettings(normalizeSettings(JSON.parse(savedSettings)));
           } catch (error) {
             console.error('Failed to parse saved settings', error);
+          }
+        }
+
+        const savedSidebarState = localStorage.getItem('claude_sidebar_collapsed_sections');
+        if (savedSidebarState) {
+          try {
+            setSidebarCollapsedSections(JSON.parse(savedSidebarState) as Record<string, boolean>);
+          } catch (error) {
+            console.error('Failed to parse saved sidebar state', error);
+          }
+        }
+
+        const savedPinnedWorkspaces = localStorage.getItem('claude_pinned_workspaces');
+        if (savedPinnedWorkspaces) {
+          try {
+            setPinnedWorkspaces(
+              (JSON.parse(savedPinnedWorkspaces) as string[]).map((workspace) =>
+                normalizeWorkspaceValue(workspace),
+              ),
+            );
+          } catch (error) {
+            console.error('Failed to parse pinned workspaces', error);
           }
         }
       } finally {
@@ -101,8 +142,11 @@ export default function App() {
       chats,
       settings,
       activeChatId,
+      pendingWorkspace: normalizeWorkspaceValue(pendingWorkspace),
+      sidebarCollapsedSections,
+      pinnedWorkspaces: pinnedWorkspaces.map((workspace) => normalizeWorkspaceValue(workspace)),
     });
-  }, [activeChatId, chats, hasLoadedPersistedState, settings]);
+  }, [activeChatId, chats, hasLoadedPersistedState, pendingWorkspace, settings, sidebarCollapsedSections, pinnedWorkspaces]);
 
   useEffect(() => {
     if (!hasLoadedPersistedState) {
@@ -110,6 +154,23 @@ export default function App() {
     }
     localStorage.setItem('claude_settings', JSON.stringify(settings));
   }, [hasLoadedPersistedState, settings]);
+
+  useEffect(() => {
+    if (!hasLoadedPersistedState) {
+      return;
+    }
+    localStorage.setItem(
+      'claude_sidebar_collapsed_sections',
+      JSON.stringify(sidebarCollapsedSections),
+    );
+  }, [hasLoadedPersistedState, sidebarCollapsedSections]);
+
+  useEffect(() => {
+    if (!hasLoadedPersistedState) {
+      return;
+    }
+    localStorage.setItem('claude_pinned_workspaces', JSON.stringify(pinnedWorkspaces));
+  }, [hasLoadedPersistedState, pinnedWorkspaces]);
 
   const handleUpdateChat = (updatedChat: Chat) => {
     setChats(prev => {
@@ -135,11 +196,16 @@ export default function App() {
     setActiveChatId((prev) => (prev === chatId ? null : prev));
   };
 
-  const handleNewChat = () => {
+  const activeChat = chats.find(item => item.id === activeChatId) || null;
+
+  const handleNewChat = (workspace?: string) => {
+    const nextWorkspace =
+      normalizeWorkspaceValue(workspace) ||
+      (activeChat?.workspace || '').trim() ||
+      pendingWorkspace;
+    setPendingWorkspace(nextWorkspace);
     setActiveChatId(null);
   };
-
-  const activeChat = chats.find(item => item.id === activeChatId) || null;
 
   return (
     <div className="flex h-screen w-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans selection:bg-orange-100 dark:selection:bg-orange-900/30">
@@ -162,6 +228,13 @@ export default function App() {
               isTyping={isTyping}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onOpenAnalyst={() => setIsDesignPanelOpen(true)}
+              pendingWorkspace={pendingWorkspace}
+              activeProvider={settings.activeProvider}
+              providers={settings.providers}
+              collapsedSections={sidebarCollapsedSections}
+              onCollapsedSectionsChange={setSidebarCollapsedSections}
+              pinnedWorkspaces={pinnedWorkspaces}
+              onPinnedWorkspacesChange={setPinnedWorkspaces}
             />
           </motion.div>
         )}
@@ -179,6 +252,8 @@ export default function App() {
             onToggleSidebar={() => setIsSidebarVisible(!isSidebarVisible)}
             onIsTypingChange={setIsTyping}
             settings={settings}
+            pendingWorkspace={pendingWorkspace}
+            onPendingWorkspaceChange={setPendingWorkspace}
             onUpdateSettings={(next) => setSettings(normalizeSettings(next))}
             onOpenSettings={() => setIsSettingsOpen(true)}
             isDesignPanelOpen={isDesignPanelOpen}

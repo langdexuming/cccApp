@@ -11,6 +11,7 @@ use crate::models::{
   ProjectApplyFixPayload, ProjectApplyFixResponse, ProjectContextPayload, ProjectContextResponse,
   ProjectGeneratePayload,
 };
+use crate::text_decode::decode_text;
 
 fn now_ms() -> i64 {
   SystemTime::now()
@@ -67,7 +68,7 @@ fn read_snippet(path: &Path, max_bytes: usize) -> Option<String> {
   } else {
     bytes.as_slice()
   };
-  Some(String::from_utf8_lossy(slice).to_string())
+  Some(decode_text(slice))
 }
 
 fn resolve_root_path(raw: &str) -> Result<PathBuf, String> {

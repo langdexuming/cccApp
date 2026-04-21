@@ -6,10 +6,6 @@ import {
   requestDesktopTitle,
 } from "../lib/desktop";
 
-function isDesktopCliOnlyProvider(provider: AppSettings['activeProvider']) {
-  return provider === 'claude' || provider === 'openai';
-}
-
 export async function* streamChat(
   messages: Message[], 
   settings: AppSettings,
@@ -38,11 +34,6 @@ export async function* streamChat(
     if (enabledAgents.length > 0) {
       for (const agent of enabledAgents) {
         yield `\n\n### ${agent.name} (${agent.role})\n\n`;
-
-        if (!isTauriRuntime() && (agent.provider === 'claude' || agent.provider === 'openai')) {
-          yield `Warning: agent ${agent.name} requires desktop CLI mode. Use the Tauri desktop app.\n\n`;
-          continue;
-        }
 
         const agentProvider = settings.providers[agent.provider];
         const agentApiKey =
@@ -116,9 +107,6 @@ export async function* streamChat(
   }
 
   const provider = settings.providers[settings.activeProvider];
-  if (!isTauriRuntime() && isDesktopCliOnlyProvider(settings.activeProvider)) {
-    throw new Error(`${provider.name} requires desktop CLI mode in the Tauri desktop app.`);
-  }
   const apiKey =
     settings.activeProvider === 'gemini' && !provider.apiKey && typeof process !== 'undefined'
       ? process.env.GEMINI_API_KEY
@@ -678,10 +666,6 @@ export async function generateTitle(firstMessage: string, settings: AppSettings)
   const desktopTitle = await requestDesktopTitle({firstMessage, settings});
   if (desktopTitle !== null) {
     return desktopTitle || "New Chat";
-  }
-
-  if (!isTauriRuntime() && isDesktopCliOnlyProvider(settings.activeProvider)) {
-    return "New Chat";
   }
 
   const provider = settings.providers[settings.activeProvider];

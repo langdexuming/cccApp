@@ -47,6 +47,7 @@ export interface AppSettings {
   };
   git: GitSettings;
   analysis: {
+    provider: AnalysisProvider;
     autoScan: boolean;
   };
 }
@@ -62,6 +63,7 @@ export interface PersistedAppState {
 
 export type ProjectPhase = 'planning' | 'design' | 'development' | 'testing' | 'deployment' | 'maintenance';
 
+export type AnalysisProvider = 'gemini' | 'openai' | 'vertex-ai';
 
 export interface ProjectInsight {
   id: string;

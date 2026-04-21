@@ -9,7 +9,7 @@ import { getProjectInsights, getInsightFix, generateProjectDocs, runPreflightChe
 import { ProjectPet } from './ProjectPet';
 import { TerminalPet } from './TerminalPet';
 import { cn } from '../lib/utils';
-import { AppSettings, ProjectInsight, AnalysisResult } from '../types';
+import { AppSettings, ProjectInsight, AnalysisProvider, AnalysisResult } from '../types';
 import { ProjectGraph } from './ProjectGraph';
 import { ProjectRadar } from './ProjectRadar';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -21,7 +21,7 @@ interface ProjectAnalystProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings['analysis'];
-  appSettings: AppSettings;
+  allProviders: AppSettings['providers'];
   onUpdateSettings: (settings: AppSettings['analysis']) => void;
   onDiscussWithAI?: (prompt: string) => void;
   isEmbedded?: boolean;
@@ -31,7 +31,7 @@ export function ProjectAnalyst({
   isOpen, 
   onClose, 
   settings, 
-  appSettings, 
+  allProviders, 
   onUpdateSettings,
   onDiscussWithAI,
   isEmbedded 
@@ -81,7 +81,8 @@ export function ProjectAnalyst({
   // --- Handlers for New Features ---
   const handleCoordinator = async (goal: string) => {
     setIsCoordinating(true);
-    const plan = await getCoordinatorPlan(appSettings, goal);
+    const providerConfig = allProviders[settings.provider];
+    const plan = await getCoordinatorPlan(settings.provider, providerConfig, goal);
     setCoordinatorPlan(plan);
     setIsCoordinating(false);
   };
@@ -89,7 +90,8 @@ export function ProjectAnalyst({
   const handleUltraplan = async (topic: string) => {
     setIsUltraplanning(true);
     setUltraplanResult(null);
-    const result = await runUltraplan(appSettings, topic);
+    const providerConfig = allProviders[settings.provider];
+    const result = await runUltraplan(settings.provider, providerConfig, topic);
     setUltraplanResult(result);
     setIsUltraplanning(false);
   };
@@ -120,33 +122,37 @@ export function ProjectAnalyst({
     }
   }, [activeTab]);
 
-  const fetchInsights = async () => {
+  const fetchInsights = async (provider: AnalysisProvider = settings.provider) => {
     setIsLoading(true);
     setPatchData(null);
     setDocs(null);
     setPreflightResults([]);
-    const result = await getProjectInsights(appSettings);
+    const providerConfig = allProviders[provider];
+    const result = await getProjectInsights(provider, providerConfig);
     setAnalysis(result);
     setIsLoading(false);
   };
 
   const handleRunPreflight = async () => {
     setIsChecking(true);
-    const results = await runPreflightChecks(appSettings);
+    const providerConfig = allProviders[settings.provider];
+    const results = await runPreflightChecks(settings.provider, providerConfig);
     setPreflightResults(results);
     setIsChecking(false);
   };
 
   const handleGenerateDocs = async () => {
     setIsGeneratingDocs(true);
-    const content = await generateProjectDocs(appSettings);
+    const providerConfig = allProviders[settings.provider];
+    const content = await generateProjectDocs(settings.provider, providerConfig);
     setDocs(content);
     setIsGeneratingDocs(false);
   };
 
   const handleApplyFix = async (insight: ProjectInsight) => {
     setIsPatching(insight.id);
-    const result = await getInsightFix(appSettings, insight);
+    const providerConfig = allProviders[settings.provider];
+    const result = await getInsightFix(settings.provider, providerConfig, insight);
     if (result) {
       setPatchData({ ...result, id: insight.id });
     }
@@ -156,14 +162,16 @@ export function ProjectAnalyst({
   const handleGenerateDeploy = async (type: 'docker' | 'github-actions') => {
     setIsGeneratingDeploy(true);
     setDeploymentFiles([]);
-    const files = await generateDeploymentConfig(appSettings, type);
+    const providerConfig = allProviders[settings.provider];
+    const files = await generateDeploymentConfig(settings.provider, providerConfig, type);
     setDeploymentFiles(files);
     setIsGeneratingDeploy(false);
   };
 
   const handleGenerateRoadmap = async () => {
     setIsGeneratingRoadmap(true);
-    const items = await getProjectRoadmap(appSettings);
+    const providerConfig = allProviders[settings.provider];
+    const items = await getProjectRoadmap(settings.provider, providerConfig);
     setRoadmap(items);
     setIsGeneratingRoadmap(false);
   };
@@ -189,7 +197,8 @@ export function ProjectAnalyst({
     if (!isDreamMode) {
       setIsDreamMode(true);
       setIsDreaming(true);
-      const result = await getProjectDreams(appSettings);
+      const providerConfig = allProviders[settings.provider];
+      const result = await getProjectDreams(settings.provider, providerConfig);
       setDreams(result);
       setIsDreaming(false);
     } else {
@@ -401,9 +410,23 @@ AI 建议：${insight.suggestion}
                     <Rocket className="w-3 h-3" />
                     交付 CODE
                   </button>
-                  <span className="text-[10px] text-text-secondary font-medium">
-                    使用当前模型: {appSettings.providers[appSettings.activeProvider]?.name || appSettings.activeProvider}
-                  </span>
+                  <div className="flex items-center gap-1 bg-zinc-100/50 p-0.5 rounded-lg">
+                  {(['gemini', 'openai'] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        onUpdateSettings({ ...settings, provider: p });
+                        fetchInsights(p);
+                      }}
+                      className={cn(
+                        "px-2 py-1 text-[9px] font-bold rounded-md transition-all",
+                        settings.provider === p ? "bg-white text-text-primary shadow-sm" : "text-text-secondary"
+                      )}
+                    >
+                      {p.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

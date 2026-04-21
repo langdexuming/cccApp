@@ -2218,53 +2218,24 @@ pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, S
       .await
     }
     "claude" => {
-      if uses_claude_cli(&provider) {
-        return crate::claude_cli::chat_with_claude_cli(
-          &provider,
-          &payload.active_model,
-          &payload.messages,
-          payload.workspace.as_deref(),
-        )
-        .await;
-      }
-      let credentials = require_claude_credentials(&provider)?;
-      let system = claude_system_prompt(&payload.messages);
-      let messages = if uses_claude_chat_completions_api(&provider) {
-        openai_messages(&payload.messages)
-      } else {
-        claude_messages(&payload.messages)
-      };
-      chat_with_claude(
-        &client,
+      crate::claude_cli::chat_with_claude_cli(
         &provider,
-        &credentials,
         &payload.active_model,
-        system.as_deref(),
-        messages,
-        4096,
+        &payload.messages,
+        payload.workspace.as_deref(),
       )
       .await
     }
-    "openai" | "custom" => {
-      if uses_cli(&provider) {
-        if provider_id == "openai" {
-          return crate::codex_cli::chat_with_codex_cli(
-            &provider,
-            &payload.active_model,
-            &payload.messages,
-            payload.workspace.as_deref(),
-          )
-          .await;
-        }
-
-        return crate::claude_cli::chat_with_claude_cli(
-          &provider,
-          &payload.active_model,
-          &payload.messages,
-          payload.workspace.as_deref(),
-        )
-        .await;
-      }
+    "openai" => {
+      crate::codex_cli::chat_with_codex_cli(
+        &provider,
+        &payload.active_model,
+        &payload.messages,
+        payload.workspace.as_deref(),
+      )
+      .await
+    }
+    "custom" => {
       let api_key = require_api_key(&provider)?;
       let messages = if uses_responses_api(&provider) {
         responses_input_messages(&payload.messages)
@@ -2289,26 +2260,19 @@ pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, S
 #[tauri::command]
 pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String> {
   let (provider_id, provider) = active_provider(&payload.settings)?;
-  if provider_id == "claude" {
-    if !uses_claude_cli(&provider)
-      && provider.api_key.trim().is_empty()
-      && provider.auth_token.trim().is_empty()
-    {
-      return Ok("New Chat".to_string());
-    }
-  } else if provider_id == "gemini" {
+  if provider_id == "gemini" {
     if !uses_cli(&provider) && provider.api_key.trim().is_empty() {
       return Ok("New Chat".to_string());
     }
-  } else if provider_id == "openai" || provider_id == "custom" {
-    if !uses_cli(&provider) && provider.api_key.trim().is_empty() {
+  } else if provider_id == "custom" {
+    if provider.api_key.trim().is_empty() {
       return Ok("New Chat".to_string());
     }
   } else if provider_id == "vertex_ai" {
     if provider.project_id.trim().is_empty() {
       return Ok("New Chat".to_string());
     }
-  } else if provider.api_key.trim().is_empty() {
+  } else if provider_id != "claude" && provider_id != "openai" && provider.api_key.trim().is_empty() {
     return Ok("New Chat".to_string());
   }
 
@@ -2354,64 +2318,36 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
     }
     "claude" => {
       let model = model_or_default(&provider, "claude-3-5-sonnet-latest");
-      if uses_claude_cli(&provider) {
-        crate::claude_cli::title_with_claude_cli(&provider, &model, &prompt).await?
-      } else {
-        let credentials = require_claude_credentials(&provider)?;
-        let title_messages = [crate::models::Message {
-          id: "title-user".to_string(),
-          role: "user".to_string(),
-          content: prompt,
-          timestamp: 0,
-        }];
-        chat_with_claude(
-          &client,
-          &provider,
-          &credentials,
-          &model,
-          None,
-          if uses_claude_chat_completions_api(&provider) {
-            openai_messages(&title_messages)
-          } else {
-            claude_messages(&title_messages)
-          },
-          64,
-        )
-        .await?
-      }
+      crate::claude_cli::title_with_claude_cli(&provider, &model, &prompt).await?
     }
-    "openai" | "custom" => {
+    "openai" => {
       let model = model_or_default(&provider, "gpt-4o-mini");
-      if uses_cli(&provider) {
-        if provider_id == "openai" {
-          crate::codex_cli::title_with_codex_cli(&provider, &model, &prompt).await?
-        } else {
-          crate::claude_cli::title_with_claude_cli(&provider, &model, &prompt).await?
-        }
+      crate::codex_cli::title_with_codex_cli(&provider, &model, &prompt).await?
+    }
+    "custom" => {
+      let model = model_or_default(&provider, "gpt-4o-mini");
+      let api_key = provider.api_key.trim().to_string();
+      let messages = if uses_responses_api(&provider) {
+        Value::Array(vec![json!({
+          "role": "user",
+          "content": prompt,
+        })])
       } else {
-        let api_key = provider.api_key.trim().to_string();
-        let messages = if uses_responses_api(&provider) {
-          Value::Array(vec![json!({
-            "role": "user",
-            "content": prompt,
-          })])
-        } else {
-          Value::Array(vec![json!({
-            "role": "user",
-            "content": prompt,
-          })])
-        };
-        chat_with_openai_compatible(
-          &client,
-          &provider_id,
-          &provider,
-          &api_key,
-          &model,
-          messages,
-          None,
-        )
-        .await?
-      }
+        Value::Array(vec![json!({
+          "role": "user",
+          "content": prompt,
+        })])
+      };
+      chat_with_openai_compatible(
+        &client,
+        &provider_id,
+        &provider,
+        &api_key,
+        &model,
+        messages,
+        None,
+      )
+      .await?
     }
     _ => "New Chat".to_string(),
   };

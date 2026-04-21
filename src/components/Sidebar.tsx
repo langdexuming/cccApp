@@ -58,8 +58,8 @@ function wireApiLabel(wireApi: AppSettings['providers'][ProviderType]['wireApi']
   switch (wireApi) {
     case 'cli':
       return 'CLI';
-    case 'claude_bridge':
-      return 'Claude Bridge';
+    case 'claude_cli':
+      return 'Claude CLI';
     case 'messages':
       return 'Messages';
     case 'chat_completions':

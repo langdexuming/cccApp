@@ -164,7 +164,7 @@ function inferWireApi(
     if (
       wireApi === 'chat_completions' ||
       wireApi === 'responses' ||
-      wireApi === 'claude_bridge'
+      wireApi === 'claude_cli'
     ) {
       return wireApi;
     }

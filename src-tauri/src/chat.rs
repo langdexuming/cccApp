@@ -155,12 +155,14 @@ fn uses_cli(provider: &ProviderConfig) -> bool {
     .unwrap_or(false)
 }
 
-fn uses_claude_bridge(provider: &ProviderConfig) -> bool {
+fn uses_claude_cli_bridge(provider: &ProviderConfig) -> bool {
   provider
     .wire_api
     .as_deref()
     .map(str::trim)
-    .map(|value| value.eq_ignore_ascii_case("claude_bridge"))
+    .map(|value| {
+      value.eq_ignore_ascii_case("claude_cli") || value.eq_ignore_ascii_case("claude_bridge")
+    })
     .unwrap_or(false)
 }
 
@@ -2007,8 +2009,8 @@ pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, S
       .await
     }
     "custom" => {
-      if uses_claude_bridge(&provider) {
-        return crate::openai_compatible_claude_bridge::chat_with_openai_compatible_claude_bridge(
+      if uses_claude_cli_bridge(&provider) {
+        return crate::openai_compatible_claude_cli::chat_with_openai_compatible_claude_cli(
           &provider,
           &payload.active_model,
           &payload.messages,
@@ -2051,7 +2053,7 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
       .map(str::trim)
       .map(|value| !value.is_empty())
       .unwrap_or(false);
-    if uses_claude_bridge(&provider) {
+    if uses_claude_cli_bridge(&provider) {
       if !has_base_url {
         return Ok("New Chat".to_string());
       }
@@ -2116,8 +2118,8 @@ pub async fn generate_chat_title(payload: TitlePayload) -> Result<String, String
     }
     "custom" => {
       let model = model_or_default(&provider, "gpt-4o-mini");
-      if uses_claude_bridge(&provider) {
-        crate::openai_compatible_claude_bridge::title_with_openai_compatible_claude_bridge(
+      if uses_claude_cli_bridge(&provider) {
+        crate::openai_compatible_claude_cli::title_with_openai_compatible_claude_cli(
           &provider,
           &model,
           &prompt,

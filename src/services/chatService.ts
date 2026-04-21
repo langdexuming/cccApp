@@ -14,7 +14,7 @@ function requiresDesktopCli(
     return true;
   }
   if (providerId === 'custom') {
-    return settings.providers.custom.wireApi === 'claude_bridge';
+    return settings.providers.custom.wireApi === 'claude_cli';
   }
   return false;
 }

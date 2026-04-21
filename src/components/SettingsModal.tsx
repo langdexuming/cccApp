@@ -410,7 +410,7 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                             </>
                           ) : (
                             <>
-                              <option value="claude_bridge">Claude CLI (Bridge)</option>
+                              <option value="claude_cli">Claude CLI (本地 claude)</option>
                               <option value="chat_completions">chat/completions</option>
                               <option value="responses">responses</option>
                             </>
@@ -431,17 +431,16 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                             通过本地 <code>codex</code> CLI 子进程发送请求。优先使用 Codex CLI 自身的登录态；如果当前提供商填写了 API Key / Base URL，也会同步传给子进程环境变量。
                           </p>
                         ) : null}
-                        {currentProvider === 'custom' && currentProviderConfig.wireApi === 'claude_bridge' ? (
+                        {currentProvider === 'custom' && currentProviderConfig.wireApi === 'claude_cli' ? (
                           <p className="text-[10px] leading-relaxed text-text-secondary">
-                            通过本地 <code>openclaude</code> bridge 子进程走 Claude CLI 风格工作流，并把当前
-                            OpenAI-compatible 的 <code>Base URL</code>、<code>API Key</code> 和模型注入给桥接层。
-                            需要本机已安装 <code>openclaude</code>，也可以用环境变量 <code>OPENCLAUDE_CLI_PATH</code>
-                            指向可执行文件。
+                            桌面版会在本地启动一个 Anthropic 兼容的翻译代理，用官方 <code>claude</code> CLI 与它对话；
+                            代理再把请求转译为 <code>/chat/completions</code> 发给当前 Base URL / API Key，并把模型名改写为上面选中的那一个。
+                            需要本机已安装官方 Claude Code CLI（<code>claude</code>）。
                           </p>
                         ) : null}
-                        {currentProvider === 'custom' && currentProviderConfig.wireApi !== 'claude_bridge' ? (
+                        {currentProvider === 'custom' && currentProviderConfig.wireApi !== 'claude_cli' ? (
                           <p className="text-[10px] leading-relaxed text-text-secondary">
-                            自定义 (OpenAI-compatible) 默认走 HTTP 兼容接口。默认使用 <code>chat/completions</code>，如果你的接口兼容 Responses API，也可以切换为 <code>responses</code>；如果希望复用 Claude CLI 风格工作流，可切到 <code>Claude CLI (Bridge)</code>。
+                            自定义 (OpenAI-compatible) 默认走 HTTP 兼容接口。默认使用 <code>chat/completions</code>，如果你的接口兼容 Responses API，也可以切换为 <code>responses</code>；如果希望让本机 Claude CLI 使用这个接口，可切到 <code>Claude CLI (本地 claude)</code>。
                           </p>
                         ) : null}
                       </div>

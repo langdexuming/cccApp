@@ -199,24 +199,42 @@ fn extract_result_error(event: &Value) -> Option<String> {
     .filter(|s| !s.trim().is_empty())
 }
 
-fn apply_provider_env(cmd: &mut Command, provider: &ProviderConfig) {
-  if let Some(base_url) = provider
-    .base_url
-    .as_deref()
-    .map(str::trim)
-    .filter(|v| !v.is_empty())
-  {
-    cmd.env("ANTHROPIC_BASE_URL", base_url);
-  }
+/// Optional override that redirects Claude CLI away from the provider's own Anthropic
+/// endpoint and into a locally-hosted proxy (e.g. the Anthropic→OpenAI translator).
+#[derive(Debug, Clone)]
+pub struct ProxyOverride {
+  pub base_url: String,
+  pub auth_token: String,
+}
 
-  let auth_token = provider.auth_token.trim();
-  let api_key = provider.api_key.trim();
-  if !auth_token.is_empty() {
-    cmd.env("ANTHROPIC_AUTH_TOKEN", auth_token);
+fn apply_provider_env(
+  cmd: &mut Command,
+  provider: &ProviderConfig,
+  proxy: Option<&ProxyOverride>,
+) {
+  if let Some(proxy) = proxy {
+    cmd.env("ANTHROPIC_BASE_URL", proxy.base_url.trim());
+    cmd.env("ANTHROPIC_AUTH_TOKEN", proxy.auth_token.trim());
     cmd.env_remove("ANTHROPIC_API_KEY");
-  } else if !api_key.is_empty() {
-    cmd.env("ANTHROPIC_API_KEY", api_key);
-    cmd.env_remove("ANTHROPIC_AUTH_TOKEN");
+  } else {
+    if let Some(base_url) = provider
+      .base_url
+      .as_deref()
+      .map(str::trim)
+      .filter(|v| !v.is_empty())
+    {
+      cmd.env("ANTHROPIC_BASE_URL", base_url);
+    }
+
+    let auth_token = provider.auth_token.trim();
+    let api_key = provider.api_key.trim();
+    if !auth_token.is_empty() {
+      cmd.env("ANTHROPIC_AUTH_TOKEN", auth_token);
+      cmd.env_remove("ANTHROPIC_API_KEY");
+    } else if !api_key.is_empty() {
+      cmd.env("ANTHROPIC_API_KEY", api_key);
+      cmd.env_remove("ANTHROPIC_AUTH_TOKEN");
+    }
   }
 
   cmd.env("DISABLE_TELEMETRY", "1");
@@ -267,6 +285,16 @@ pub async fn chat_with_claude_cli(
   messages: &[crate::models::Message],
   workspace: Option<&str>,
 ) -> Result<String, String> {
+  chat_with_claude_cli_overridden(provider, model, messages, workspace, None).await
+}
+
+pub async fn chat_with_claude_cli_overridden(
+  provider: &ProviderConfig,
+  model: &str,
+  messages: &[crate::models::Message],
+  workspace: Option<&str>,
+  proxy: Option<&ProxyOverride>,
+) -> Result<String, String> {
   let user_message = last_user_message(messages)
     .ok_or_else(|| "对话中没有待发送的用户消息。".to_string())?;
   let base_seed = messages
@@ -277,13 +305,13 @@ pub async fn chat_with_claude_cli(
   let seed = cli_session_store::session_seed(base_seed, workspace);
   let session_id = derive_session_id(&seed);
   let first_turn = is_first_turn(messages);
-  match invoke_claude_cli(provider, model, &session_id, first_turn, user_message, workspace).await {
+  match invoke_claude_cli(provider, model, &session_id, first_turn, user_message, workspace, proxy).await {
     Ok(text) => Ok(text),
     Err(err) if first_turn && err.contains("already in use") => {
-      invoke_claude_cli(provider, model, &session_id, false, user_message, workspace).await
+      invoke_claude_cli(provider, model, &session_id, false, user_message, workspace, proxy).await
     }
     Err(err) if !first_turn && looks_like_missing_session(&err) => {
-      invoke_claude_cli(provider, model, &session_id, true, user_message, workspace).await
+      invoke_claude_cli(provider, model, &session_id, true, user_message, workspace, proxy).await
     }
     Err(err) => Err(err),
   }
@@ -302,8 +330,17 @@ pub async fn title_with_claude_cli(
   model: &str,
   prompt: &str,
 ) -> Result<String, String> {
+  title_with_claude_cli_overridden(provider, model, prompt, None).await
+}
+
+pub async fn title_with_claude_cli_overridden(
+  provider: &ProviderConfig,
+  model: &str,
+  prompt: &str,
+  proxy: Option<&ProxyOverride>,
+) -> Result<String, String> {
   let session_id = Uuid::new_v4().to_string();
-  invoke_claude_cli(provider, model, &session_id, true, prompt, None).await
+  invoke_claude_cli(provider, model, &session_id, true, prompt, None, proxy).await
 }
 
 async fn invoke_claude_cli(
@@ -313,6 +350,7 @@ async fn invoke_claude_cli(
   is_first_turn: bool,
   user_message: &str,
   workspace: Option<&str>,
+  proxy: Option<&ProxyOverride>,
 ) -> Result<String, String> {
   if user_message.trim().is_empty() {
     return Err("消息内容为空，无法发送到 Claude CLI。".to_string());
@@ -334,7 +372,7 @@ async fn invoke_claude_cli(
   } else {
     cmd.stdin(Stdio::null());
   }
-  apply_provider_env(&mut cmd, provider);
+  apply_provider_env(&mut cmd, provider, proxy);
 
   let mut child = cmd
     .spawn()
@@ -413,15 +451,21 @@ async fn invoke_claude_cli(
           result_api_error = None;
         } else if is_error_flag || subtype.contains("error") || has_error_string {
           if fallback.is_none() {
-            fallback = fallback_text;
+            fallback = fallback_text.clone();
           }
-          let detail = extract_result_error(&event).unwrap_or_else(|| {
-            if subtype.is_empty() {
-              "Claude CLI 上游返回错误".to_string()
-            } else {
-              format!("Claude CLI 上游返回错误（subtype={subtype}）")
-            }
-          });
+          let detail = extract_result_error(&event)
+            .or_else(|| {
+              fallback_text
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+            })
+            .unwrap_or_else(|| {
+              if subtype.is_empty() {
+                "Claude CLI 上游返回错误".to_string()
+              } else {
+                format!("Claude CLI 上游返回错误（subtype={subtype}）")
+              }
+            });
           result_error = Some(detail);
           if result_api_error.is_none() {
             result_api_error = event

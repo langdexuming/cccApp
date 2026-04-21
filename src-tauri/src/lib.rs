@@ -1,3 +1,4 @@
+mod anthropic_proxy;
 mod app_state;
 mod chat;
 mod claude_cli;
@@ -7,7 +8,7 @@ mod gemini_cli;
 mod git;
 mod local_config;
 mod models;
-mod openai_compatible_claude_bridge;
+mod openai_compatible_claude_cli;
 mod project_analysis;
 mod text_decode;
 mod workspace;

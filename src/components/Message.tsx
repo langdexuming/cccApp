@@ -5,7 +5,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Message as MessageType } from '../types';
 import { cn } from '../lib/utils';
-import { User, Bot, Copy, Check, ChevronDown, ChevronUp, Pencil, X as CloseIcon, Save } from 'lucide-react';
+import { User, Sparkles, Copy, Check, ChevronDown, ChevronUp, Pencil, X as CloseIcon, Save } from 'lucide-react';
 
 interface MessageProps {
   message: MessageType;
@@ -143,8 +143,8 @@ export function Message({ message, onEdit, readOnly = false }: MessageProps) {
       )}>
         <div className="flex-shrink-0">
           {!isUser && (
-            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-transparent border border-border-theme">
-              <Bot className="w-4 h-4 text-accent-theme" />
+            <div className="w-8 h-8 rounded-xl bg-orange-500 flex items-center justify-center shadow-inner">
+              <Sparkles className="w-4 h-4 text-white" />
             </div>
           )}
         </div>

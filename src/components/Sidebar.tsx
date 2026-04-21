@@ -1,5 +1,4 @@
 import {
-  Bot,
   ChevronDown,
   ChevronRight,
   FolderInput,
@@ -278,22 +277,19 @@ function WorkspaceSection({
                   <button
                     onClick={() => onSelectChat(chat.id)}
                     className={cn(
-                      'w-full text-left px-3 py-2.5 rounded-xl flex flex-col gap-1 transition-all border',
+                      'w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-2 transition-all border relative',
                       activeChatId === chat.id
                         ? 'bg-white shadow-sm border-border-theme'
                         : 'hover:bg-zinc-50 border-transparent',
                     )}
                     title={chat.workspace || undefined}
                   >
-                    <div className="text-[14px] font-medium text-text-primary truncate pr-5">
+                    <div className="text-[12px] font-semibold text-text-primary truncate flex-1 min-w-0 pr-6">
                       {chat.title}
                     </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] text-zinc-400 font-medium tracking-tight">
+                    <div className="flex items-center gap-1.5 shrink-0 group-hover:opacity-0 transition-opacity">
+                      <span className="text-[9px] text-zinc-400 font-medium tracking-tight">
                         {formatDistanceToNow(chat.updatedAt, {addSuffix: true})}
-                      </span>
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] font-bold text-text-secondary">
-                        {runtimeLabel(chat.provider, providers)}
                       </span>
                     </div>
                   </button>
@@ -379,42 +375,28 @@ function ExternalConversationSection({
                   type="button"
                   onClick={() => onSelectConversation(conversation.id)}
                   className={cn(
-                    'w-full text-left rounded-xl border px-3 py-3 transition-all',
+                    'w-full text-left rounded-xl border px-3 py-2 transition-all flex items-center justify-between gap-2',
                     activeConversationId === conversation.id
                       ? 'bg-sky-50 border-sky-200 shadow-sm'
                       : 'bg-white border-transparent hover:bg-zinc-50',
                   )}
                   title={conversation.transcriptPath || undefined}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-[14px] font-medium text-text-primary truncate">
-                        {conversation.title}
-                      </div>
-                      {conversation.preview ? (
-                        <div className="mt-1 text-[11px] text-text-secondary line-clamp-2">
-                          {conversation.preview}
-                        </div>
-                      ) : null}
-                    </div>
+                  <div className="text-[12px] font-semibold text-text-primary truncate flex-1 min-w-0">
+                    {conversation.title}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[9px] text-zinc-400 font-medium whitespace-nowrap">
+                      {formatDistanceToNow(conversation.updatedAt, {addSuffix: true})}
+                    </span>
                     <span
                       className={cn(
-                        'shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold',
+                        'rounded-full px-1.5 py-0.5 text-[8px] font-bold',
                         sourceBadgeClass(conversation.sourceKind),
                       )}
                     >
                       {conversation.sourceLabel}
                     </span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className="text-[10px] text-zinc-400 font-medium tracking-tight">
-                      {formatDistanceToNow(conversation.updatedAt, {addSuffix: true})}
-                    </span>
-                    {conversation.sourceDetail ? (
-                      <span className="text-[10px] text-text-secondary truncate max-w-[150px]">
-                        {conversation.sourceDetail}
-                      </span>
-                    ) : null}
                   </div>
                 </button>
               ))}
@@ -561,7 +543,7 @@ export function Sidebar({
               </div>
               <div className="mt-1 text-sm font-semibold text-text-primary truncate">{activeRuntime}</div>
             </div>
-            <Bot className="w-5 h-5 text-accent-theme shrink-0" />
+            <Sparkles className="w-5 h-5 text-accent-theme shrink-0" />
           </div>
           <div className="mt-3 flex items-center gap-2">
             <button
@@ -687,7 +669,7 @@ export function Sidebar({
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-text-primary truncate">{hostname}</div>
             <div className="text-[10px] text-accent-theme font-bold truncate uppercase tracking-tighter">
-              Workspace Console
+              天才程序员
             </div>
           </div>
         </div>

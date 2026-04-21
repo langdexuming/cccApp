@@ -1,6 +1,14 @@
 ﻿import { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Bot, Settings, Bug, CheckCircle2, FileText, Rocket, Box, FolderInput } from 'lucide-react';
-import { Message as MessageType, Chat, AppSettings, ProviderType, ProjectPhase, Task } from '../types';
+import {
+  Message as MessageType,
+  Chat,
+  AppSettings,
+  ProviderType,
+  ProjectPhase,
+  Task,
+  WorkspaceExternalConversation,
+} from '../types';
 import { DEFAULT_SETTINGS } from '../constants';
 import { Message } from './Message';
 import { ProjectTimeline } from './ProjectTimeline';
@@ -31,6 +39,7 @@ function pickValidModel(
 
 interface ChatInterfaceProps {
   chat: Chat | null;
+  externalConversation?: WorkspaceExternalConversation | null;
   onUpdateChat: (chat: Chat) => void;
   onPatchChat?: (chatId: string, patch: Partial<Chat>) => void;
   onNewChat: (workspace?: string) => void;
@@ -52,6 +61,7 @@ interface ChatInterfaceProps {
 
 export function ChatInterface({ 
   chat, 
+  externalConversation,
   onUpdateChat, 
   onPatchChat,
   onNewChat, 
@@ -85,6 +95,10 @@ export function ChatInterface({
   const [showHistory, setShowHistory] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const isReadOnlyView = Boolean(externalConversation);
+  const activeConversationTitle = externalConversation?.title || chat?.title || '开启新对话';
+  const activeConversationMessages = externalConversation?.messages || chat?.messages || [];
+  const activeConversationWorkspace = externalConversation?.workspace || chat?.workspace;
 
   const activeProvider = settings.providers[settings.activeProvider];
   const allModels = activeProvider.models.map(m => ({
@@ -131,9 +145,12 @@ export function ChatInterface({
   }, [activeProvider.models, chat?.effort, chat?.id, chat?.model, chat?.provider, settings.activeProvider]);
 
   useEffect(() => {
-    const nextDraft = chat?.workspace?.trim() ?? normalizeWorkspaceValue(pendingWorkspace);
+    const nextDraft =
+      externalConversation?.workspace?.trim() ??
+      chat?.workspace?.trim() ??
+      normalizeWorkspaceValue(pendingWorkspace);
     setWorkspaceDraft(nextDraft);
-  }, [chat?.id, chat?.workspace, pendingWorkspace]);
+  }, [chat?.id, chat?.workspace, externalConversation?.id, externalConversation?.workspace, pendingWorkspace]);
 
   useEffect(() => {
     onIsTypingChange?.(isLoading);
@@ -219,7 +236,7 @@ export function ChatInterface({
 
   useEffect(() => {
     scrollToBottom();
-  }, [chat?.messages, isLoading]);
+  }, [activeConversationMessages, isLoading]);
 
   useEffect(() => {
     if (externalInput) {
@@ -254,7 +271,7 @@ export function ChatInterface({
   };
 
   const handleEditMessage = (messageId: string, newContent: string) => {
-    if (!chat) return;
+    if (!chat || isReadOnlyView) return;
     const updatedMessages = chat.messages.map(m => 
       m.id === messageId ? { ...m, content: newContent } : m
     );
@@ -265,6 +282,10 @@ export function ChatInterface({
   };
 
   const commitWorkspaceDraft = async (): Promise<string | undefined> => {
+    if (isReadOnlyView) {
+      return normalizeWorkspaceValue(activeConversationWorkspace);
+    }
+
     const trimmed = workspaceDraft.trim();
     if (!trimmed) {
       if (chat?.workspace) {
@@ -350,7 +371,7 @@ export function ChatInterface({
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (isReadOnlyView || !input.trim() || isLoading) return;
 
     const userMessage: MessageType = {
       id: Date.now().toString(),
@@ -467,52 +488,84 @@ export function ChatInterface({
           </button>
           <div className="flex items-center gap-2 px-2 py-1 hover:bg-zinc-50 rounded-lg cursor-pointer transition-colors group">
             <h2 className="text-[14px] font-semibold text-text-primary truncate max-w-[150px] md:max-w-xs">
-              {chat?.title || '开启新对话'}
+              {activeConversationTitle}
             </h2>
             <ChevronDown className="w-3.5 h-3.5 text-text-secondary group-hover:text-text-primary transition-colors" />
           </div>
           {isTauriRuntime() && (
-            <div
-              className="flex items-center gap-1.5 min-w-0 max-w-[240px] lg:max-w-sm ml-1"
-              title="当前会话关联的工作区路径"
-            >
-              <FolderInput className="w-3.5 h-3.5 text-text-secondary shrink-0" aria-hidden />
-              <input
-                value={workspaceDraft}
-                onChange={(e) => setWorkspaceDraft(e.target.value)}
-                onBlur={() => { void commitWorkspaceDraft(); }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    (e.target as HTMLInputElement).blur();
+            isReadOnlyView ? (
+              <div
+                className="flex items-center gap-2 min-w-0 max-w-[320px] lg:max-w-md ml-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2"
+                title={activeConversationWorkspace || undefined}
+              >
+                <FolderInput className="w-4 h-4 text-text-secondary shrink-0" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
+                    外部只读记录
+                  </div>
+                  <div className="text-[11px] text-text-primary truncate">
+                    {externalConversation?.sourceLabel}
+                  </div>
+                  <div className="text-[10px] text-text-secondary truncate">
+                    {activeConversationWorkspace || '未绑定工作区'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNewChat(activeConversationWorkspace)}
+                  className="shrink-0 rounded border border-border-theme bg-white px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-zinc-50"
+                  title="在当前工作区新建本地对话"
+                >
+                  新建
+                </button>
+              </div>
+            ) : (
+              <div
+                className="flex items-center gap-1.5 min-w-0 max-w-[240px] lg:max-w-sm ml-1"
+                title="当前会话关联的工作区路径"
+              >
+                <FolderInput className="w-3.5 h-3.5 text-text-secondary shrink-0" aria-hidden />
+                <input
+                  value={workspaceDraft}
+                  onChange={(e) => setWorkspaceDraft(e.target.value)}
+                  onBlur={() => {
+                    void commitWorkspaceDraft();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  placeholder="输入工作区路径"
+                  className="text-[11px] text-text-secondary bg-zinc-50 border border-border-theme rounded px-2 py-1 w-full min-w-0 outline-none focus:border-accent-theme"
+                  title="用于关联 CLI 会话工作区；留空则不绑定工作区"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handlePickWorkspace();
+                  }}
+                  disabled={isPickingWorkspace}
+                  className="shrink-0 rounded border border-border-theme bg-zinc-50 px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                  title="选择工作区"
+                >
+                  {isPickingWorkspace ? '选择中' : '选择'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleOpenWorkspace();
+                  }}
+                  disabled={
+                    isPickingWorkspace || (workspaceDraft.trim() ? !looksLikeWorkspacePath(workspaceDraft) : false)
                   }
-                }}
-                placeholder="输入工作区路径"
-                className="text-[11px] text-text-secondary bg-zinc-50 border border-border-theme rounded px-2 py-1 w-full min-w-0 outline-none focus:border-accent-theme"
-                title="用于关联 CLI 会话工作区；留空则不绑定工作区"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  void handlePickWorkspace();
-                }}
-                disabled={isPickingWorkspace}
-                className="shrink-0 rounded border border-border-theme bg-zinc-50 px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                title="选择工作区"
-              >
-                {isPickingWorkspace ? '选择中' : '选择'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void handleOpenWorkspace();
-                }}
-                disabled={isPickingWorkspace || (workspaceDraft.trim() ? !looksLikeWorkspacePath(workspaceDraft) : false)}
-                className="shrink-0 rounded border border-border-theme bg-zinc-50 px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                title="打开工作区"
-              >
-                打开
-              </button>
-            </div>
+                  className="shrink-0 rounded border border-border-theme bg-zinc-50 px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                  title="打开工作区"
+                >
+                  打开
+                </button>
+              </div>
+            )
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -738,7 +791,7 @@ export function ChatInterface({
               <div className="p-4 border-t border-border-theme">
                 <button 
                   onClick={() => {
-                    onNewChat();
+                    onNewChat(activeConversationWorkspace);
                     setShowHistory(false);
                   }}
                   className="w-full py-2 bg-accent-theme text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
@@ -757,7 +810,7 @@ export function ChatInterface({
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-[15%] pt-10 pb-5"
       >
-        {!chat || chat.messages.length === 0 ? (
+        {activeConversationMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center p-8 text-center space-y-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -819,7 +872,36 @@ export function ChatInterface({
           </div>
         ) : (
           <div className="flex flex-col pb-40">
-            {settings.collaboration.enabled && (
+            {isReadOnlyView ? (
+              <div className="mb-6 rounded-3xl border border-zinc-200 bg-white/90 px-5 py-4 text-left shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold uppercase tracking-widest text-text-secondary">
+                      外部工作区记录
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-text-primary">
+                      {externalConversation?.sourceLabel}
+                    </div>
+                    <div className="mt-1 text-xs text-text-secondary break-all">
+                      {activeConversationWorkspace}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onNewChat(activeConversationWorkspace)}
+                    className="shrink-0 rounded-xl bg-accent-theme px-3 py-2 text-xs font-bold text-white transition hover:opacity-90"
+                  >
+                    在工作区新建对话
+                  </button>
+                </div>
+                {externalConversation?.sourceDetail ? (
+                  <div className="mt-3 text-[11px] text-text-secondary">
+                    来源标识: {externalConversation.sourceDetail}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {!isReadOnlyView && settings.collaboration.enabled && (
               <ProjectTimeline 
                 currentPhase={chat.currentPhase || 'planning'}
                 tasks={chat.tasks || []}
@@ -841,8 +923,8 @@ export function ChatInterface({
                 }}
               />
             )}
-            {chat.messages.map((msg) => (
-              <Message key={msg.id} message={msg} onEdit={handleEditMessage} />
+            {activeConversationMessages.map((msg) => (
+              <Message key={msg.id} message={msg} onEdit={handleEditMessage} readOnly={isReadOnlyView} />
             ))}
             {errorMessage && (
               <motion.div 
@@ -868,7 +950,7 @@ export function ChatInterface({
                 </div>
               </motion.div>
             )}
-            {isLoading && chat.messages[chat.messages.length - 1].role === 'user' && (
+            {isLoading && chat && chat.messages[chat.messages.length - 1].role === 'user' && (
               <div className="mb-8 flex gap-5">
                 <div className="flex-shrink-0">
                   <div className="w-6 h-6 rounded bg-accent-theme flex items-center justify-center">
@@ -888,128 +970,153 @@ export function ChatInterface({
       {/* Input Area */}
       <div className="absolute bottom-0 left-0 right-0 px-4 md:px-[10%] pb-8 bg-gradient-to-t from-bg-main via-bg-main/95 to-transparent pt-20 z-20">
         <div className="max-w-3xl mx-auto relative group">
-          {/* AI Prompts / Feature Hints */}
-          {!input.trim() && !isLoading && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-none no-scrollbar justify-center"
+          {isReadOnlyView ? (
+            <motion.div
+              layout
+              className="rounded-2xl border border-zinc-200 bg-white/95 p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
             >
-              {AI_PROMPTS.slice(0, 3).map((prompt, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handlePromptClick(prompt.text)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-medium bg-white border border-border-theme hover:border-accent-theme/30 hover:shadow-md transition-all active:scale-95 whitespace-nowrap text-text-primary"
-                >
-                  <span className="opacity-70">{prompt.icon}</span>
-                  {prompt.text}
-                </button>
-              ))}
-            </motion.div>
-          )}
-
-          {/* Shortcut Commands Menu */}
-          <AnimatePresence>
-            {showCommands && (
-              <motion.div
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                className="absolute bottom-full mb-4 left-0 w-64 bg-white border border-border-theme rounded-2xl shadow-2xl overflow-hidden z-50 p-2"
-              >
-                <div className="px-3 py-2 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-zinc-50 mb-1 flex items-center gap-2">
-                  <Terminal className="w-3 h-3" />
-              快捷命令
-                </div>
-                {commands.map((cmd) => (
-                  <button
-                    key={cmd.key}
-                    onClick={() => {
-                      cmd.action();
-                      setShowCommands(false);
-                      textareaRef.current?.focus();
-                    }}
-                    className="w-full flex flex-col items-start px-3 py-2.5 hover:bg-zinc-50 rounded-xl transition-colors text-left group"
-                  >
-                    <span className="text-sm font-bold text-accent-theme">{cmd.key}</span>
-                    <span className="text-[11px] text-text-secondary font-medium">{cmd.desc}</span>
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <motion.div 
-            layout
-            className={cn(
-              "relative flex flex-col p-4 bg-white border border-border-theme rounded-2xl transition-all duration-300 ease-out min-h-[120px]",
-              "shadow-[0_8px_30px_rgb(0,0,0,0.04)]",
-              "focus-within:shadow-[0_20px_40px_rgba(0,0,0,0.08)] focus-within:border-accent-theme/40",
-              input.trim() ? "border-accent-theme/20 shadow-[0_12px_40px_rgba(217,119,87,0.08)]" : ""
-            )}
-          >
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              value={input}
-              onChange={handleInput}
-              onKeyDown={handleKeyDown}
-          placeholder="在这里输入您的问题..."
-              className="flex-1 bg-transparent border-0 focus:ring-0 resize-none py-2 px-1 text-text-primary placeholder-zinc-400 text-[15px] leading-relaxed"
-            />
-            <div className="flex justify-between items-center mt-3 pt-3 border-t border-zinc-50">
-              <div className="flex gap-1 items-center">
-                <div className="relative group/upload">
-                  <button className="p-2 text-text-secondary hover:text-text-primary hover:bg-zinc-50 rounded-xl transition-all active:scale-95 flex items-center gap-1.5">
-                    <Paperclip className="w-4 h-4" />
-                    <span className="text-[10px] font-bold text-zinc-400 group-hover/upload:text-accent-theme transition-colors">DOCX/PPTX/XLSX</span>
-                  </button>
-                  {/* Floating format hint */}
-                  <div className="absolute bottom-full mb-2 left-0 opacity-0 group-hover/upload:opacity-100 transition-all pointer-events-none translate-y-2 group-hover/upload:translate-y-0">
-                    <div className="bg-text-primary text-white px-3 py-1.5 rounded-lg text-[9px] font-bold shadow-xl whitespace-nowrap flex items-center gap-2">
-                      <Box className="w-3 h-3 text-accent-theme" />
-                      支持全文档 / 网页资产抓取
-                    </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-text-primary">这是外部历史记录的只读视图</div>
+                  <div className="mt-1 text-sm text-text-secondary">
+                    不能直接在这里续聊。如果要继续处理这个工作区，建议新建一个本地对话。
                   </div>
                 </div>
-                <div className="w-px h-4 bg-zinc-100 mx-1" />
-                <button 
-                  onClick={toggleListening}
-                  className={cn(
-                    "p-2 rounded-xl transition-all active:scale-95",
-                    isListening ? "text-red-500 bg-red-50" : "text-text-secondary hover:text-text-primary hover:bg-zinc-50"
-                  )}
-                  title="语音输入 / 手动标注"
-                >
-                  {isListening ? <MicOff className="w-4 h-4 animate-pulse" /> : <Mic className="w-4 h-4" />}
-                </button>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                {input.length > 0 && (
-                  <span className="text-[10px] font-medium text-text-secondary/40 tabular-nums">
-                    {input.length}
-                  </span>
-                )}
                 <button
-                  onClick={() => handleSubmit()}
-                  disabled={!input.trim() || isLoading}
-                  className={cn(
-                    "w-10 h-10 rounded-xl transition-all flex items-center justify-center group",
-                    input.trim() && !isLoading
-                      ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20 hover:scale-105 active:scale-95"
-                      : "bg-[#F3F3F2] text-zinc-300"
-                  )}
+                  onClick={() => onNewChat(activeConversationWorkspace)}
+                  className="shrink-0 rounded-xl bg-accent-theme px-4 py-2 text-sm font-bold text-white transition hover:opacity-90"
                 >
-                  {isLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-accent-theme" />
-                  ) : (
-                    <ArrowUp className="w-5 h-5" />
-                  )}
+                  在此工作区新建对话
                 </button>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          ) : (
+            <>
+              {!input.trim() && !isLoading && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-none no-scrollbar justify-center"
+                >
+                  {AI_PROMPTS.slice(0, 3).map((prompt, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handlePromptClick(prompt.text)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-medium bg-white border border-border-theme hover:border-accent-theme/30 hover:shadow-md transition-all active:scale-95 whitespace-nowrap text-text-primary"
+                    >
+                      <span className="opacity-70">{prompt.icon}</span>
+                      {prompt.text}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+
+              <AnimatePresence>
+                {showCommands && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute bottom-full mb-4 left-0 w-64 bg-white border border-border-theme rounded-2xl shadow-2xl overflow-hidden z-50 p-2"
+                  >
+                    <div className="px-3 py-2 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-zinc-50 mb-1 flex items-center gap-2">
+                      <Terminal className="w-3 h-3" />
+                      快捷命令
+                    </div>
+                    {commands.map((cmd) => (
+                      <button
+                        key={cmd.key}
+                        onClick={() => {
+                          cmd.action();
+                          setShowCommands(false);
+                          textareaRef.current?.focus();
+                        }}
+                        className="w-full flex flex-col items-start px-3 py-2.5 hover:bg-zinc-50 rounded-xl transition-colors text-left group"
+                      >
+                        <span className="text-sm font-bold text-accent-theme">{cmd.key}</span>
+                        <span className="text-[11px] text-text-secondary font-medium">{cmd.desc}</span>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <motion.div
+                layout
+                className={cn(
+                  'relative flex flex-col p-4 bg-white border border-border-theme rounded-2xl transition-all duration-300 ease-out min-h-[120px]',
+                  'shadow-[0_8px_30px_rgb(0,0,0,0.04)]',
+                  'focus-within:shadow-[0_20px_40px_rgba(0,0,0,0.08)] focus-within:border-accent-theme/40',
+                  input.trim() ? 'border-accent-theme/20 shadow-[0_12px_40px_rgba(217,119,87,0.08)]' : '',
+                )}
+              >
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  value={input}
+                  onChange={handleInput}
+                  onKeyDown={handleKeyDown}
+                  placeholder="在这里输入您的问题..."
+                  className="flex-1 bg-transparent border-0 focus:ring-0 resize-none py-2 px-1 text-text-primary placeholder-zinc-400 text-[15px] leading-relaxed"
+                />
+                <div className="flex justify-between items-center mt-3 pt-3 border-t border-zinc-50">
+                  <div className="flex gap-1 items-center">
+                    <div className="relative group/upload">
+                      <button className="p-2 text-text-secondary hover:text-text-primary hover:bg-zinc-50 rounded-xl transition-all active:scale-95 flex items-center gap-1.5">
+                        <Paperclip className="w-4 h-4" />
+                        <span className="text-[10px] font-bold text-zinc-400 group-hover/upload:text-accent-theme transition-colors">
+                          DOCX/PPTX/XLSX
+                        </span>
+                      </button>
+                      <div className="absolute bottom-full mb-2 left-0 opacity-0 group-hover/upload:opacity-100 transition-all pointer-events-none translate-y-2 group-hover/upload:translate-y-0">
+                        <div className="bg-text-primary text-white px-3 py-1.5 rounded-lg text-[9px] font-bold shadow-xl whitespace-nowrap flex items-center gap-2">
+                          <Box className="w-3 h-3 text-accent-theme" />
+                          支持全文档 / 网页资产抓取
+                        </div>
+                      </div>
+                    </div>
+                    <div className="w-px h-4 bg-zinc-100 mx-1" />
+                    <button
+                      onClick={toggleListening}
+                      className={cn(
+                        'p-2 rounded-xl transition-all active:scale-95',
+                        isListening
+                          ? 'text-red-500 bg-red-50'
+                          : 'text-text-secondary hover:text-text-primary hover:bg-zinc-50',
+                      )}
+                      title="语音输入 / 手动标注"
+                    >
+                      {isListening ? <MicOff className="w-4 h-4 animate-pulse" /> : <Mic className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {input.length > 0 && (
+                      <span className="text-[10px] font-medium text-text-secondary/40 tabular-nums">
+                        {input.length}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleSubmit()}
+                      disabled={!input.trim() || isLoading}
+                      className={cn(
+                        'w-10 h-10 rounded-xl transition-all flex items-center justify-center group',
+                        input.trim() && !isLoading
+                          ? 'bg-accent-theme text-white shadow-lg shadow-accent-theme/20 hover:scale-105 active:scale-95'
+                          : 'bg-[#F3F3F2] text-zinc-300',
+                      )}
+                    >
+                      {isLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-accent-theme" />
+                      ) : (
+                        <ArrowUp className="w-5 h-5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </>
+          )}
           <p className="mt-4 text-center text-[10px] text-zinc-400 font-medium">
             项目全生命周期设计系统 · 由 Gemini & Vertex AI 提供支持
           </p>

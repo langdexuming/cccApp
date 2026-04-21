@@ -5,6 +5,7 @@ import type {
   PersistedAppState,
   Chat,
   ProviderConfig,
+  WorkspaceExternalConversation,
 } from '../types';
 
 declare global {
@@ -110,6 +111,17 @@ export async function openWorkspacePath(path: string): Promise<void> {
     return;
   }
   await invokeCommand('open_workspace_path', {path});
+}
+
+export async function fetchWorkspaceExternalConversations(
+  workspace: string,
+): Promise<WorkspaceExternalConversation[]> {
+  if (!isTauriRuntime() || !workspace.trim()) {
+    return [];
+  }
+  return invokeCommand<WorkspaceExternalConversation[]>('get_workspace_external_conversations', {
+    workspace,
+  });
 }
 
 export function isTauriRuntime(): boolean {

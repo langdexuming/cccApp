@@ -10,6 +10,7 @@ mod models;
 mod project_analysis;
 mod text_decode;
 mod workspace;
+mod workspace_history;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -39,7 +40,8 @@ pub fn run() {
       project_analysis::get_kairos_logs,
       workspace::normalize_workspace_path,
       workspace::pick_workspace_path,
-      workspace::open_workspace_path
+      workspace::open_workspace_path,
+      workspace_history::get_workspace_external_conversations
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

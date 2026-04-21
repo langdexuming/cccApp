@@ -1,13 +1,17 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {motion, AnimatePresence} from 'motion/react';
 import {ChatInterface} from './components/ChatInterface';
 import {SettingsModal} from './components/SettingsModal';
 import {Sidebar} from './components/Sidebar';
 import {ProjectAnalyst} from './components/ProjectAnalyst';
 import {AutoUpdate} from './components/AutoUpdate';
-import type {AppSettings, Chat} from './types';
+import type {AppSettings, Chat, WorkspaceExternalConversation} from './types';
 import {cn} from './lib/utils';
-import {loadPersistedState, savePersistedState} from './lib/desktop';
+import {
+  fetchWorkspaceExternalConversations,
+  loadPersistedState,
+  savePersistedState,
+} from './lib/desktop';
 import {normalizeWorkspaceValue} from './lib/workspace';
 import {
   fetchLocalToolConfig,
@@ -18,6 +22,7 @@ import {createDefaultSettings, normalizeSettings} from './lib/providerCatalog';
 export default function App() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [activeExternalConversationId, setActiveExternalConversationId] = useState<string | null>(null);
   const [pendingWorkspace, setPendingWorkspace] = useState<string>('');
   const [sidebarCollapsedSections, setSidebarCollapsedSections] = useState<Record<string, boolean>>({});
   const [pinnedWorkspaces, setPinnedWorkspaces] = useState<string[]>([]);
@@ -28,6 +33,11 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
   const [hasLoadedPersistedState, setHasLoadedPersistedState] = useState(false);
   const [externalMessage, setExternalMessage] = useState<string | null>(null);
+  const [workspaceExternalConversations, setWorkspaceExternalConversations] = useState<
+    WorkspaceExternalConversation[]
+  >([]);
+  const [isLoadingExternalConversations, setIsLoadingExternalConversations] = useState(false);
+  const [externalConversationsError, setExternalConversationsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,6 +143,67 @@ export default function App() {
     };
   }, []);
 
+  const activeChat = useMemo(
+    () => chats.find((item) => item.id === activeChatId) || null,
+    [activeChatId, chats],
+  );
+  const activeExternalConversation = useMemo(
+    () =>
+      workspaceExternalConversations.find((item) => item.id === activeExternalConversationId) || null,
+    [activeExternalConversationId, workspaceExternalConversations],
+  );
+  const currentWorkspace = normalizeWorkspaceValue(
+    pendingWorkspace || activeChat?.workspace || activeExternalConversation?.workspace,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!currentWorkspace) {
+      setWorkspaceExternalConversations([]);
+      setActiveExternalConversationId(null);
+      setExternalConversationsError(null);
+      setIsLoadingExternalConversations(false);
+      return;
+    }
+
+    setIsLoadingExternalConversations(true);
+    setExternalConversationsError(null);
+
+    fetchWorkspaceExternalConversations(currentWorkspace)
+      .then((items) => {
+        if (cancelled) {
+          return;
+        }
+        setWorkspaceExternalConversations(
+          items.map((item) => ({
+            ...item,
+            workspace: normalizeWorkspaceValue(item.workspace),
+          })),
+        );
+        setActiveExternalConversationId((prev) =>
+          prev && items.some((item) => item.id === prev) ? prev : null,
+        );
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setWorkspaceExternalConversations([]);
+        setActiveExternalConversationId(null);
+        setExternalConversationsError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingExternalConversations(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentWorkspace]);
+
   useEffect(() => {
     if (!hasLoadedPersistedState) {
       return;
@@ -146,7 +217,15 @@ export default function App() {
       sidebarCollapsedSections,
       pinnedWorkspaces: pinnedWorkspaces.map((workspace) => normalizeWorkspaceValue(workspace)),
     });
-  }, [activeChatId, chats, hasLoadedPersistedState, pendingWorkspace, settings, sidebarCollapsedSections, pinnedWorkspaces]);
+  }, [
+    activeChatId,
+    chats,
+    hasLoadedPersistedState,
+    pendingWorkspace,
+    settings,
+    sidebarCollapsedSections,
+    pinnedWorkspaces,
+  ]);
 
   useEffect(() => {
     if (!hasLoadedPersistedState) {
@@ -172,9 +251,24 @@ export default function App() {
     localStorage.setItem('claude_pinned_workspaces', JSON.stringify(pinnedWorkspaces));
   }, [hasLoadedPersistedState, pinnedWorkspaces]);
 
+  const handleSelectChat = (chatId: string) => {
+    const nextChat = chats.find((item) => item.id === chatId) || null;
+    setActiveExternalConversationId(null);
+    setActiveChatId(chatId);
+    setPendingWorkspace(normalizeWorkspaceValue(nextChat?.workspace));
+  };
+
+  const handleSelectExternalConversation = (conversationId: string) => {
+    const nextConversation =
+      workspaceExternalConversations.find((item) => item.id === conversationId) || null;
+    setActiveChatId(null);
+    setActiveExternalConversationId(conversationId);
+    setPendingWorkspace(normalizeWorkspaceValue(nextConversation?.workspace));
+  };
+
   const handleUpdateChat = (updatedChat: Chat) => {
-    setChats(prev => {
-      const index = prev.findIndex(item => item.id === updatedChat.id);
+    setChats((prev) => {
+      const index = prev.findIndex((item) => item.id === updatedChat.id);
       if (index === -1) {
         return [...prev, updatedChat];
       }
@@ -182,13 +276,19 @@ export default function App() {
       next[index] = updatedChat;
       return next;
     });
+    setActiveExternalConversationId(null);
     setActiveChatId(updatedChat.id);
+    setPendingWorkspace(normalizeWorkspaceValue(updatedChat.workspace));
   };
 
   const handlePatchChat = (chatId: string, patch: Partial<Chat>) => {
-    setChats(prev =>
-      prev.map(item => (item.id === chatId ? {...item, ...patch} : item))
+    setChats((prev) =>
+      prev.map((item) => (item.id === chatId ? {...item, ...patch} : item)),
     );
+
+    if (chatId === activeChatId && Object.prototype.hasOwnProperty.call(patch, 'workspace')) {
+      setPendingWorkspace(normalizeWorkspaceValue(patch.workspace));
+    }
   };
 
   const handleDeleteChat = (chatId: string) => {
@@ -196,14 +296,14 @@ export default function App() {
     setActiveChatId((prev) => (prev === chatId ? null : prev));
   };
 
-  const activeChat = chats.find(item => item.id === activeChatId) || null;
-
   const handleNewChat = (workspace?: string) => {
     const nextWorkspace =
       normalizeWorkspaceValue(workspace) ||
+      normalizeWorkspaceValue(activeExternalConversation?.workspace) ||
       (activeChat?.workspace || '').trim() ||
       pendingWorkspace;
     setPendingWorkspace(nextWorkspace);
+    setActiveExternalConversationId(null);
     setActiveChatId(null);
   };
 
@@ -214,7 +314,7 @@ export default function App() {
         {isSidebarVisible && (
           <motion.div
             initial={{width: 0, opacity: 0}}
-            animate={{width: '260px', opacity: 1}}
+            animate={{width: '300px', opacity: 1}}
             exit={{width: 0, opacity: 0}}
             transition={{type: 'spring', damping: 25, stiffness: 200}}
             className="overflow-hidden flex-shrink-0"
@@ -222,7 +322,12 @@ export default function App() {
             <Sidebar
               chats={chats}
               activeChatId={activeChatId}
-              onSelectChat={setActiveChatId}
+              activeExternalConversationId={activeExternalConversationId}
+              externalConversations={workspaceExternalConversations}
+              isLoadingExternalConversations={isLoadingExternalConversations}
+              externalConversationsError={externalConversationsError}
+              onSelectChat={handleSelectChat}
+              onSelectExternalConversation={handleSelectExternalConversation}
               onNewChat={handleNewChat}
               onDeleteChat={handleDeleteChat}
               isTyping={isTyping}
@@ -240,14 +345,20 @@ export default function App() {
         )}
       </AnimatePresence>
       <main className="flex-1 h-full flex overflow-hidden relative">
-        <div className={cn("flex-1 h-full min-w-0 transition-all duration-300", isDesignPanelOpen ? "w-1/2" : "w-full")}>
+        <div
+          className={cn(
+            'flex-1 h-full min-w-0 transition-all duration-300',
+            isDesignPanelOpen ? 'w-1/2' : 'w-full',
+          )}
+        >
           <ChatInterface
             chat={activeChat}
+            externalConversation={activeExternalConversation}
             onUpdateChat={handleUpdateChat}
             onPatchChat={handlePatchChat}
             onNewChat={handleNewChat}
             chats={chats}
-            onSelectChat={setActiveChatId}
+            onSelectChat={handleSelectChat}
             isSidebarVisible={isSidebarVisible}
             onToggleSidebar={() => setIsSidebarVisible(!isSidebarVisible)}
             onIsTypingChange={setIsTyping}
@@ -266,20 +377,20 @@ export default function App() {
         <AnimatePresence mode="wait">
           {isDesignPanelOpen && (
             <motion.div
-              initial={{ x: '100%', opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: '100%', opacity: 0 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 200 }}
+              initial={{x: '100%', opacity: 0}}
+              animate={{x: 0, opacity: 1}}
+              exit={{x: '100%', opacity: 0}}
+              transition={{type: 'spring', damping: 30, stiffness: 200}}
               className="w-1/2 border-l border-border-theme h-full overflow-hidden bg-bg-canvas flex flex-col shadow-[-4px_0_24px_rgba(0,0,0,0.02)]"
             >
-              <ProjectAnalyst 
-                isOpen={true} 
+              <ProjectAnalyst
+                isOpen={true}
                 isEmbedded={true}
                 onClose={() => setIsDesignPanelOpen(false)}
                 settings={settings.analysis}
                 allProviders={settings.providers}
                 onUpdateSettings={(analysisSettings) => {
-                  setSettings(prev => ({ ...prev, analysis: analysisSettings }));
+                  setSettings((prev) => ({...prev, analysis: analysisSettings}));
                 }}
                 onDiscussWithAI={(prompt) => setExternalMessage(prompt)}
               />

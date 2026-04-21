@@ -10,6 +10,7 @@ import { User, Bot, Copy, Check, ChevronDown, ChevronUp, Pencil, X as CloseIcon,
 interface MessageProps {
   message: MessageType;
   onEdit?: (id: string, newContent: string) => void;
+  readOnly?: boolean;
 }
 
 function CodeBlock({ language, value }: { language: string, value: string }) {
@@ -98,7 +99,7 @@ function CodeBlock({ language, value }: { language: string, value: string }) {
   );
 }
 
-export function Message({ message, onEdit }: MessageProps) {
+export function Message({ message, onEdit, readOnly = false }: MessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -213,7 +214,7 @@ export function Message({ message, onEdit }: MessageProps) {
             "absolute top-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-all z-10",
             isUser ? "-left-20" : "-right-20"
           )}>
-            {isUser && !isEditing && (
+            {isUser && !isEditing && !readOnly && (
               <button
                 onClick={() => setIsEditing(true)}
                 className="p-1.5 rounded-lg bg-white/80 backdrop-blur-sm border border-border-theme shadow-sm hover:bg-white active:scale-95"

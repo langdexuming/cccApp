@@ -111,3 +111,29 @@ export interface Chat {
   currentPhase?: ProjectPhase;
   tasks?: Task[];
 }
+
+export type WorkspaceExternalConversationSourceKind =
+  | 'claude_cli'
+  | 'codex_cli'
+  | 'codex_app';
+
+export interface WorkspaceExternalConversationMessage {
+  id: string;
+  role: Role;
+  content: string;
+  timestamp: number;
+}
+
+export interface WorkspaceExternalConversation {
+  id: string;
+  workspace: string;
+  sourceKind: WorkspaceExternalConversationSourceKind;
+  sourceLabel: string;
+  title: string;
+  updatedAt: number;
+  preview: string;
+  messages: WorkspaceExternalConversationMessage[];
+  sourceDetail?: string | null;
+  sessionId?: string | null;
+  transcriptPath?: string | null;
+}

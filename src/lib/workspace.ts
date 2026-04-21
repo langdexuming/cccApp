@@ -1,4 +1,4 @@
-const UNGROUPED_LABEL = '本地 / 未分组';
+const UNGROUPED_LABEL = '本地对话';
 
 export function normalizeWorkspaceValue(value: string | null | undefined): string {
   const text = value?.trim();

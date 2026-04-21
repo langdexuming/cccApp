@@ -1,9 +1,27 @@
-import { Bot, ChevronDown, ChevronRight, FolderInput, MessageSquare, Pin, Plus, Search, Settings, Sparkles, Trash2 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { useEffect, useMemo, useState } from 'react';
-import { AppSettings, Chat, ProviderType } from '../types';
-import { openWorkspacePath } from '../lib/desktop';
-import { cn } from '../lib/utils';
+import {
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  FolderInput,
+  MessageSquare,
+  Pin,
+  Plus,
+  Search,
+  Settings,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
+import {formatDistanceToNow} from 'date-fns';
+import {useEffect, useMemo, useState} from 'react';
+import {
+  AppSettings,
+  Chat,
+  ProviderType,
+  WorkspaceExternalConversation,
+  WorkspaceExternalConversationSourceKind,
+} from '../types';
+import {openWorkspacePath} from '../lib/desktop';
+import {cn} from '../lib/utils';
 import {
   looksLikeWorkspacePath,
   normalizeWorkspaceValue,
@@ -15,7 +33,12 @@ import {
 interface SidebarProps {
   chats: Chat[];
   activeChatId: string | null;
+  activeExternalConversationId: string | null;
+  externalConversations: WorkspaceExternalConversation[];
+  isLoadingExternalConversations?: boolean;
+  externalConversationsError?: string | null;
   onSelectChat: (id: string) => void;
+  onSelectExternalConversation: (id: string) => void;
   onNewChat: (workspace?: string) => void;
   onDeleteChat: (id: string) => void;
   isTyping?: boolean;
@@ -60,7 +83,24 @@ function runtimeLabel(providerId: ProviderType | undefined, providers: AppSettin
   return `${provider.name} · ${wireApiLabel(provider.wireApi)}`;
 }
 
-function matchesSidebarSearch(chat: Chat, providers: AppSettings['providers'], query: string): boolean {
+function sourceBadgeClass(sourceKind: WorkspaceExternalConversationSourceKind): string {
+  switch (sourceKind) {
+    case 'claude_cli':
+      return 'bg-amber-50 text-amber-700';
+    case 'codex_cli':
+      return 'bg-emerald-50 text-emerald-700';
+    case 'codex_app':
+      return 'bg-sky-50 text-sky-700';
+    default:
+      return 'bg-zinc-100 text-text-secondary';
+  }
+}
+
+function workspaceSectionKey(scope: 'current' | 'history' | 'external', workspace: string): string {
+  return `${scope}::${workspace}`;
+}
+
+function matchesLocalSearch(chat: Chat, providers: AppSettings['providers'], query: string): boolean {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
     return true;
@@ -78,8 +118,21 @@ function matchesSidebarSearch(chat: Chat, providers: AppSettings['providers'], q
   return haystacks.some((value) => value.includes(normalizedQuery));
 }
 
-function workspaceSectionKey(scope: 'current' | 'history', workspace: string): string {
-  return `${scope}::${workspace}`;
+function matchesExternalSearch(conversation: WorkspaceExternalConversation, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [
+    conversation.title,
+    conversation.preview,
+    conversation.sourceLabel,
+    conversation.sourceDetail || '',
+    conversation.workspace,
+  ]
+    .map((value) => value.toLowerCase())
+    .some((value) => value.includes(normalizedQuery));
 }
 
 function WorkspaceSection({
@@ -138,7 +191,7 @@ function WorkspaceSection({
           type="button"
           onClick={() => onNewChat(workspace === UNGROUPED_LABEL ? '' : workspace)}
           className="rounded px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal hover:bg-white"
-          title="在该工作区中新建对话"
+          title="在这个工作区中新建对话"
         >
           新建
         </button>
@@ -217,7 +270,7 @@ function WorkspaceSection({
           <div className="space-y-0.5 px-2 pb-2">
             {chats.length === 0 ? (
               <div className="rounded-xl px-3 py-3 text-xs text-text-secondary">
-                这个工作区还没有历史对话，点击“新建”开始。
+                这个工作区下还没有本地对话，点“新建”就可以开始。
               </div>
             ) : (
               chats.map((chat) => (
@@ -237,7 +290,7 @@ function WorkspaceSection({
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] text-zinc-400 font-medium tracking-tight">
-                        {formatDistanceToNow(chat.updatedAt, { addSuffix: true })}
+                        {formatDistanceToNow(chat.updatedAt, {addSuffix: true})}
                       </span>
                       <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] font-bold text-text-secondary">
                         {runtimeLabel(chat.provider, providers)}
@@ -245,9 +298,9 @@ function WorkspaceSection({
                     </div>
                   </button>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (window.confirm('确定要删除这个对话吗？')) {
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (window.confirm('确定要删除这条本地对话吗？')) {
                         onDeleteChat(chat.id);
                       }
                     }}
@@ -266,10 +319,122 @@ function WorkspaceSection({
   );
 }
 
+function ExternalConversationSection({
+  workspace,
+  conversations,
+  activeConversationId,
+  collapsed,
+  onToggleCollapsed,
+  onSelectConversation,
+  isLoading,
+  error,
+}: {
+  workspace: string;
+  conversations: WorkspaceExternalConversation[];
+  activeConversationId: string | null;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  onSelectConversation: (id: string) => void;
+  isLoading?: boolean;
+  error?: string | null;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="px-2 py-1 text-[10px] font-bold text-text-secondary uppercase tracking-widest flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className="inline-flex items-center gap-2 min-w-0 flex-1 text-left hover:text-text-primary transition-colors"
+          title={collapsed ? '展开外部记录' : '收起外部记录'}
+        >
+          <span className="w-1 h-1 rounded-full bg-sky-300" />
+          {collapsed ? <ChevronRight className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />}
+          <span className="truncate">外部对话记录</span>
+        </button>
+        <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal">
+          {conversations.length}
+        </span>
+      </div>
+
+      {!collapsed ? (
+        <div className="rounded-2xl border border-zinc-100 bg-white/90 shadow-sm px-2 py-2">
+          <div className="px-2 pb-2 text-[10px] text-text-secondary break-all">{workspace}</div>
+          {isLoading ? (
+            <div className="rounded-xl px-3 py-3 text-xs text-text-secondary">
+              正在读取 Claude / Codex 的工作区历史...
+            </div>
+          ) : error ? (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-3 text-xs text-red-700">
+              读取外部记录失败: {error}
+            </div>
+          ) : conversations.length === 0 ? (
+            <div className="rounded-xl px-3 py-3 text-xs text-text-secondary">
+              这个工作区下暂时没有找到 Claude CLI、Codex CLI 或 Codex App 的历史记录。
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {conversations.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => onSelectConversation(conversation.id)}
+                  className={cn(
+                    'w-full text-left rounded-xl border px-3 py-3 transition-all',
+                    activeConversationId === conversation.id
+                      ? 'bg-sky-50 border-sky-200 shadow-sm'
+                      : 'bg-white border-transparent hover:bg-zinc-50',
+                  )}
+                  title={conversation.transcriptPath || undefined}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-medium text-text-primary truncate">
+                        {conversation.title}
+                      </div>
+                      {conversation.preview ? (
+                        <div className="mt-1 text-[11px] text-text-secondary line-clamp-2">
+                          {conversation.preview}
+                        </div>
+                      ) : null}
+                    </div>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold',
+                        sourceBadgeClass(conversation.sourceKind),
+                      )}
+                    >
+                      {conversation.sourceLabel}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-zinc-400 font-medium tracking-tight">
+                      {formatDistanceToNow(conversation.updatedAt, {addSuffix: true})}
+                    </span>
+                    {conversation.sourceDetail ? (
+                      <span className="text-[10px] text-text-secondary truncate max-w-[150px]">
+                        {conversation.sourceDetail}
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function Sidebar({
   chats,
   activeChatId,
+  activeExternalConversationId,
+  externalConversations,
+  isLoadingExternalConversations,
+  externalConversationsError,
   onSelectChat,
+  onSelectExternalConversation,
   onNewChat,
   onDeleteChat,
   isTyping,
@@ -287,7 +452,9 @@ export function Sidebar({
   const [searchQuery, setSearchQuery] = useState('');
 
   const activeChat = chats.find((chat) => chat.id === activeChatId) || null;
-  const currentWorkspace = normalizeWorkspaceValue(pendingWorkspace || activeChat?.workspace);
+  const currentWorkspace = normalizeWorkspaceValue(
+    pendingWorkspace || activeChat?.workspace || externalConversations[0]?.workspace,
+  );
   const activeRuntime = runtimeLabel(activeProvider, providers);
   const pinnedWorkspaceSet = useMemo(
     () => new Set(pinnedWorkspaces.map((workspace) => normalizeWorkspaceValue(workspace)).filter(Boolean)),
@@ -311,7 +478,7 @@ export function Sidebar({
     const groups: Record<string, Chat[]> = {};
 
     chats.forEach((chat) => {
-      if (!matchesSidebarSearch(chat, providers, searchQuery)) {
+      if (!matchesLocalSearch(chat, providers, searchQuery)) {
         return;
       }
 
@@ -332,6 +499,11 @@ export function Sidebar({
     return groups;
   }, [chats, providers, searchQuery]);
 
+  const filteredExternalConversations = useMemo(
+    () => externalConversations.filter((conversation) => matchesExternalSearch(conversation, searchQuery)),
+    [externalConversations, searchQuery],
+  );
+
   const toggleSection = (key: string) => {
     onCollapsedSectionsChange({
       ...collapsedSections,
@@ -340,6 +512,7 @@ export function Sidebar({
   };
 
   const currentWorkspaceChats = currentWorkspace ? groupedChats[currentWorkspace] || [] : [];
+
   const togglePinnedWorkspace = (workspace: string) => {
     const normalizedWorkspace = normalizeWorkspaceValue(workspace);
     if (!normalizedWorkspace || !looksLikeWorkspacePath(normalizedWorkspace)) {
@@ -347,12 +520,15 @@ export function Sidebar({
     }
 
     if (pinnedWorkspaceSet.has(normalizedWorkspace)) {
-      onPinnedWorkspacesChange(pinnedWorkspaces.filter((item) => normalizeWorkspaceValue(item) !== normalizedWorkspace));
+      onPinnedWorkspacesChange(
+        pinnedWorkspaces.filter((item) => normalizeWorkspaceValue(item) !== normalizedWorkspace),
+      );
       return;
     }
 
     onPinnedWorkspacesChange([...pinnedWorkspaces, normalizedWorkspace]);
   };
+
   const otherWorkspaceEntries = Object.entries(groupedChats)
     .filter(([workspace]) => workspace !== currentWorkspace)
     .sort(([a], [b]) =>
@@ -366,6 +542,13 @@ export function Sidebar({
     );
 
   const currentSectionKey = currentWorkspace ? workspaceSectionKey('current', currentWorkspace) : '';
+  const externalSectionKey = currentWorkspace ? workspaceSectionKey('external', currentWorkspace) : '';
+
+  const hasAnyResult =
+    Object.keys(groupedChats).length > 0 ||
+    filteredExternalConversations.length > 0 ||
+    Boolean(currentWorkspace) ||
+    Boolean(isLoadingExternalConversations);
 
   return (
     <div className="w-[300px] h-full bg-bg-sidebar border-r border-border-theme flex flex-col">
@@ -374,7 +557,7 @@ export function Sidebar({
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs font-bold uppercase tracking-widest text-accent-theme">
-                当前 CLI
+                当前运行通道
               </div>
               <div className="mt-1 text-sm font-semibold text-text-primary truncate">{activeRuntime}</div>
             </div>
@@ -397,8 +580,8 @@ export function Sidebar({
           <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索工作区、对话或 CLI"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="搜索工作区、对话或来源"
             className="w-full rounded-xl border border-border-theme bg-white px-9 py-2 text-sm text-text-primary outline-none transition focus:border-accent-theme"
           />
         </div>
@@ -406,31 +589,43 @@ export function Sidebar({
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5 scrollbar-none">
         {currentWorkspace ? (
-          <WorkspaceSection
-            title="当前工作区"
-            workspace={currentWorkspace}
-            chats={currentWorkspaceChats}
-            activeChatId={activeChatId}
-            providers={providers}
-            onSelectChat={onSelectChat}
-            onDeleteChat={onDeleteChat}
-            onNewChat={onNewChat}
-            pinned={pinnedWorkspaceSet.has(currentWorkspace)}
-            onTogglePinned={() => togglePinnedWorkspace(currentWorkspace)}
-            collapsed={!!collapsedSections[currentSectionKey]}
-            onToggleCollapsed={() => toggleSection(currentSectionKey)}
-            highlight
-            showCurrentBadge
-          />
+          <>
+            <WorkspaceSection
+              title="当前工作区"
+              workspace={currentWorkspace}
+              chats={currentWorkspaceChats}
+              activeChatId={activeChatId}
+              providers={providers}
+              onSelectChat={onSelectChat}
+              onDeleteChat={onDeleteChat}
+              onNewChat={onNewChat}
+              pinned={pinnedWorkspaceSet.has(currentWorkspace)}
+              onTogglePinned={() => togglePinnedWorkspace(currentWorkspace)}
+              collapsed={!!collapsedSections[currentSectionKey]}
+              onToggleCollapsed={() => toggleSection(currentSectionKey)}
+              highlight
+              showCurrentBadge
+            />
+            <ExternalConversationSection
+              workspace={currentWorkspace}
+              conversations={filteredExternalConversations}
+              activeConversationId={activeExternalConversationId}
+              collapsed={!!collapsedSections[externalSectionKey]}
+              onToggleCollapsed={() => toggleSection(externalSectionKey)}
+              onSelectConversation={onSelectExternalConversation}
+              isLoading={isLoadingExternalConversations}
+              error={externalConversationsError}
+            />
+          </>
         ) : null}
 
-        {!currentWorkspace && Object.keys(groupedChats).length === 0 ? (
+        {!hasAnyResult ? (
           <div className="px-2 py-8 text-center rounded-2xl border border-dashed border-zinc-200 bg-white/70">
             <MessageSquare className="w-8 h-8 text-zinc-200 mx-auto mb-2" />
             <p className="text-xs text-text-secondary font-medium">
               {searchQuery.trim()
-                ? '没有匹配的工作区或历史对话，换个关键词试试。'
-                : '还没有历史对话，先选择工作区，或直接开始一个本地对话。'}
+                ? '没有匹配的工作区或对话记录，换个关键词试试。'
+                : '还没有历史对话，先选择工作区，或者直接新建一个本地对话。'}
             </p>
             {!searchQuery.trim() ? (
               <button
@@ -486,13 +681,13 @@ export function Sidebar({
         </button>
 
         <div className="pt-4 flex items-center gap-3 px-3 py-2 border-t border-zinc-100 mt-2">
-          <div className="w-8 h-8 rounded-xl bg-orange-500 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform">
+          <div className="w-8 h-8 rounded-xl bg-orange-500 flex items-center justify-center shadow-inner">
             <Sparkles className="w-5 h-5 text-white animate-pulse" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-text-primary truncate">{hostname}</div>
             <div className="text-[10px] text-accent-theme font-bold truncate uppercase tracking-tighter">
-              天才程序员
+              Workspace Console
             </div>
           </div>
         </div>

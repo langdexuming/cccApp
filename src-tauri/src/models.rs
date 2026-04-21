@@ -111,6 +111,33 @@ pub struct Chat {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkspaceExternalConversationMessage {
+  pub id: String,
+  pub role: String,
+  pub content: String,
+  pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceExternalConversation {
+  pub id: String,
+  pub workspace: String,
+  pub source_kind: String,
+  pub source_label: String,
+  pub title: String,
+  pub updated_at: i64,
+  #[serde(default)]
+  pub preview: String,
+  #[serde(default)]
+  pub messages: Vec<WorkspaceExternalConversationMessage>,
+  pub source_detail: Option<String>,
+  pub session_id: Option<String>,
+  pub transcript_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct Message {
   pub id: String,
   pub role: String,

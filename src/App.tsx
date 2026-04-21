@@ -388,7 +388,7 @@ export default function App() {
                 isEmbedded={true}
                 onClose={() => setIsDesignPanelOpen(false)}
                 settings={settings.analysis}
-                allProviders={settings.providers}
+                appSettings={settings}
                 onUpdateSettings={(analysisSettings) => {
                   setSettings((prev) => ({...prev, analysis: analysisSettings}));
                 }}

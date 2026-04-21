@@ -11,7 +11,6 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::time::sleep;
 
 use crate::models::{
   AppSettings, ChatCompletionPayload, FetchProviderModelsPayload, FetchProviderModelsResponse,
@@ -146,15 +145,6 @@ fn uses_responses_api(provider: &ProviderConfig) -> bool {
     .unwrap_or(false)
 }
 
-fn uses_claude_chat_completions_api(provider: &ProviderConfig) -> bool {
-  provider
-    .wire_api
-    .as_deref()
-    .map(str::trim)
-    .map(|value| value.eq_ignore_ascii_case("chat_completions"))
-    .unwrap_or(false)
-}
-
 fn uses_cli(provider: &ProviderConfig) -> bool {
   provider
     .wire_api
@@ -162,10 +152,6 @@ fn uses_cli(provider: &ProviderConfig) -> bool {
     .map(str::trim)
     .map(|value| value.eq_ignore_ascii_case("cli"))
     .unwrap_or(false)
-}
-
-fn uses_claude_cli(provider: &ProviderConfig) -> bool {
-  uses_cli(provider)
 }
 
 fn claude_api_root(provider: &ProviderConfig) -> String {
@@ -185,24 +171,6 @@ fn claude_api_root(provider: &ProviderConfig) -> String {
   }
 }
 
-fn claude_messages_url(provider: &ProviderConfig) -> String {
-  let root = claude_api_root(provider);
-  if root.ends_with("/v1") {
-    format!("{root}/messages")
-  } else {
-    format!("{root}/v1/messages")
-  }
-}
-
-fn claude_chat_completions_url(provider: &ProviderConfig) -> String {
-  let root = claude_api_root(provider);
-  if root.ends_with("/v1") {
-    format!("{root}/chat/completions")
-  } else {
-    format!("{root}/v1/chat/completions")
-  }
-}
-
 fn claude_models_url(provider: &ProviderConfig) -> String {
   let root = claude_api_root(provider);
   if root.ends_with("/v1") {
@@ -212,95 +180,12 @@ fn claude_models_url(provider: &ProviderConfig) -> String {
   }
 }
 
-fn claude_uses_1m_context(model: &str) -> bool {
-  let trimmed = model.trim();
-  trimmed.ends_with("[1m]") || trimmed.ends_with("[1M]")
-}
-
-fn claude_api_model(model: &str) -> String {
-  model
-    .trim()
-    .replace("[1m]", "")
-    .replace("[1M]", "")
-    .replace("[2m]", "")
-    .replace("[2M]", "")
-    .trim()
-    .to_string()
-}
-
-fn claude_beta_headers(model: &str) -> Vec<&'static str> {
-  let normalized = claude_api_model(model).to_ascii_lowercase();
-  let mut betas = Vec::new();
-
-  if !normalized.contains("haiku") {
-    betas.push("claude-code-20250219");
-  }
-  if claude_uses_1m_context(model) {
-    betas.push("context-1m-2025-08-07");
-  }
-
-  betas
-}
-
-fn claude_system_blocks(system: Option<&str>) -> Option<Value> {
-  let mut blocks = vec![json!({
-    "type": "text",
-    "text": "You are Claude Code, Anthropic's official CLI for Claude.",
-  })];
-
-  if let Some(system) = system.map(str::trim).filter(|value| !value.is_empty()) {
-    blocks.push(json!({
-      "type": "text",
-      "text": system,
-    }));
-  }
-
-  Some(Value::Array(blocks))
-}
-
-fn claude_metadata_user_id() -> String {
-  let session_seed = claude_session_id();
-  let user_hex = session_seed
-    .as_bytes()
-    .iter()
-    .cycle()
-    .take(32)
-    .map(|byte| format!("{byte:02x}"))
-    .collect::<String>();
-  let uuid_hex = session_seed
-    .as_bytes()
-    .iter()
-    .rev()
-    .cycle()
-    .take(16)
-    .map(|byte| format!("{byte:02x}"))
-    .collect::<String>();
-  let uuid = format!(
-    "{}-{}-{}-{}-{}",
-    &uuid_hex[0..8],
-    &uuid_hex[8..12],
-    &uuid_hex[12..16],
-    &uuid_hex[16..20],
-    &uuid_hex[20..32]
-  );
-  format!("user_{user_hex}_account__session_{uuid}")
-}
-
-fn claude_metadata() -> Value {
-  json!({
-    "user_id": claude_metadata_user_id()
-  })
-}
-
 fn claude_billing_header_value() -> String {
   format!(
     "cc_version={CLAUDE_CLI_VERSION_WITH_FINGERPRINT}; cc_entrypoint={CLAUDE_CLI_ENTRYPOINT}; cch=00000;"
   )
 }
 
-const CLAUDE_MAX_RETRIES: usize = 3;
-const CLAUDE_BASE_DELAY_MS: u64 = 500;
-const CLAUDE_MAX_DELAY_MS: u64 = 8_000;
 const CLAUDE_CLI_VERSION: &str = "2.1.113";
 const CLAUDE_CLI_VERSION_WITH_FINGERPRINT: &str = "2.1.113.f12";
 const CLAUDE_CLI_ENTRYPOINT: &str = "sdk-cli";
@@ -558,11 +443,6 @@ fn apply_claude_auth(
   }
 }
 
-fn claude_should_retry_status(status: StatusCode) -> bool {
-  let code = status.as_u16();
-  code == 429 || code >= 500
-}
-
 fn claude_is_auth_error(status: StatusCode, message: &str) -> bool {
   let code = status.as_u16();
   if code == 401 || code == 403 {
@@ -576,21 +456,6 @@ fn claude_is_auth_error(status: StatusCode, message: &str) -> bool {
   ["auth", "token", "api key", "x-api-key", "authorization"]
     .iter()
     .any(|needle| lower.contains(needle))
-}
-
-fn claude_should_retry_transport_error(error: &reqwest::Error) -> bool {
-  error.is_timeout() || error.is_connect() || error.is_request() || error.is_body()
-}
-
-fn claude_retry_delay_ms(attempt: usize) -> u64 {
-  let multiplier = 1_u64 << attempt.saturating_sub(1).min(4);
-  let base = (CLAUDE_BASE_DELAY_MS * multiplier).min(CLAUDE_MAX_DELAY_MS);
-  let jitter = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .unwrap_or_default()
-    .subsec_millis() as u64
-    % 250;
-  (base + jitter).min(CLAUDE_MAX_DELAY_MS)
 }
 
 fn claude_error_output(details: &ApiErrorDetails) -> String {
@@ -918,97 +783,6 @@ fn extract_text_from_responses_sse(raw: &str) -> String {
   }
 }
 
-fn extract_text_from_claude_response(value: &Value) -> String {
-  value["content"]
-    .as_array()
-    .map(|items| {
-      items
-        .iter()
-        .filter(|item| item.get("type").and_then(Value::as_str) == Some("text"))
-        .filter_map(|item| item.get("text").and_then(Value::as_str))
-        .collect::<Vec<_>>()
-        .join("")
-    })
-    .unwrap_or_default()
-}
-
-fn apply_claude_sse_payload(data: &str, streamed_text: &mut String, final_text: &mut String) {
-  if data.is_empty() || data == "[DONE]" {
-    return;
-  }
-
-  let Ok(value) = serde_json::from_str::<Value>(data) else {
-    return;
-  };
-
-  match value.get("type").and_then(Value::as_str) {
-    Some("content_block_start") => {
-      if let Some(content_block) = value.get("content_block") {
-        streamed_text.push_str(&extract_text_from_value(content_block));
-      }
-    }
-    Some("content_block_delta") => {
-      if value.pointer("/delta/type").and_then(Value::as_str) == Some("text_delta") {
-        if let Some(delta) = value.pointer("/delta/text").and_then(Value::as_str) {
-          streamed_text.push_str(delta);
-        }
-      }
-    }
-    Some("message_start") => {
-      if final_text.trim().is_empty() {
-        if let Some(message) = value.get("message") {
-          *final_text = extract_text_from_claude_response(message);
-        }
-      }
-    }
-    Some("message_delta") => {
-      if final_text.trim().is_empty() {
-        if let Some(message) = value.get("message") {
-          *final_text = extract_text_from_claude_response(message);
-        }
-      }
-    }
-    _ => {}
-  }
-}
-
-fn extract_text_from_claude_sse(raw: &str) -> String {
-  let mut streamed_text = String::new();
-  let mut final_text = String::new();
-  let mut event_data = Vec::new();
-
-  for line in raw.lines() {
-    let trimmed = line.trim_end();
-    if let Some(data) = trimmed.strip_prefix("data:") {
-      event_data.push(data.trim_start().to_string());
-      continue;
-    }
-
-    if trimmed.is_empty() && !event_data.is_empty() {
-      apply_claude_sse_payload(
-        &event_data.join("\n"),
-        &mut streamed_text,
-        &mut final_text,
-      );
-      event_data.clear();
-    }
-  }
-
-  if !event_data.is_empty() {
-    apply_claude_sse_payload(
-      &event_data.join("\n"),
-      &mut streamed_text,
-      &mut final_text,
-    );
-  }
-
-  if final_text.trim().is_empty() {
-    streamed_text
-  } else {
-    final_text
-  }
-}
-
 async fn api_error_details(response: Response) -> ApiErrorDetails {
   let status = response.status();
   let fallback = format!("request failed with status {status}");
@@ -1176,143 +950,6 @@ fn clarify_claude_error(message: String, context: &ClaudeDebugContext) -> String
     );
   }
   format!("{trimmed}{}", claude_debug_suffix(context))
-}
-
-async fn send_claude_json_with_retry(
-  client: &Client,
-  context: &ClaudeDebugContext,
-  credentials: &ClaudeCredentials,
-  body: &Value,
-  include_anthropic_version: bool,
-) -> Result<Value, String> {
-  let session_id = claude_session_id();
-  let auth_modes = claude_auth_modes(credentials);
-  let mut last_error = None;
-
-  for (auth_index, auth_mode) in auth_modes.iter().enumerate() {
-    for attempt in 1..=(CLAUDE_MAX_RETRIES + 1) {
-      let request = apply_claude_auth(
-        apply_claude_default_headers(
-          client.post(&context.endpoint),
-          &session_id,
-          &context.beta_headers,
-          include_anthropic_version,
-          false,
-        ),
-        auth_mode,
-      );
-
-      match request.json(body).send().await {
-        Ok(response) => {
-          if response.status().is_success() {
-            return response
-              .json::<Value>()
-              .await
-              .map_err(|err| format!("failed to parse Claude response: {err}"));
-          }
-
-          let details = api_error_details(response).await;
-          let output = claude_error_output(&details);
-
-          if claude_is_auth_error(details.status, &output) && auth_index + 1 < auth_modes.len() {
-            last_error = Some(output);
-            break;
-          }
-
-          if claude_should_retry_status(details.status) && attempt <= CLAUDE_MAX_RETRIES {
-            last_error = Some(output);
-            sleep(Duration::from_millis(claude_retry_delay_ms(attempt))).await;
-            continue;
-          }
-
-          return Err(clarify_claude_error(output, context));
-        }
-        Err(err) => {
-          let message = format!("Claude request failed: {err}");
-          if claude_should_retry_transport_error(&err) && attempt <= CLAUDE_MAX_RETRIES {
-            last_error = Some(message);
-            sleep(Duration::from_millis(claude_retry_delay_ms(attempt))).await;
-            continue;
-          }
-          return Err(clarify_claude_error(message, context));
-        }
-      }
-    }
-  }
-
-  Err(clarify_claude_error(
-    last_error.unwrap_or_else(|| "Claude request failed".to_string()),
-    context,
-  ))
-}
-
-async fn send_claude_text_with_retry(
-  client: &Client,
-  context: &ClaudeDebugContext,
-  credentials: &ClaudeCredentials,
-  body: &Value,
-  include_anthropic_version: bool,
-  accepts_sse: bool,
-) -> Result<String, String> {
-  let session_id = claude_session_id();
-  let auth_modes = claude_auth_modes(credentials);
-  let mut last_error = None;
-
-  for (auth_index, auth_mode) in auth_modes.iter().enumerate() {
-    for attempt in 1..=(CLAUDE_MAX_RETRIES + 1) {
-      let request = apply_claude_auth(
-        apply_claude_default_headers(
-          client.post(&context.endpoint),
-          &session_id,
-          &context.beta_headers,
-          include_anthropic_version,
-          accepts_sse,
-        ),
-        auth_mode,
-      );
-
-      match request.json(body).send().await {
-        Ok(response) => {
-          if response.status().is_success() {
-            return response
-              .text()
-              .await
-              .map_err(|err| format!("failed to read Claude response: {err}"));
-          }
-
-          let details = api_error_details(response).await;
-          let output = claude_error_output(&details);
-
-          if claude_is_auth_error(details.status, &output) && auth_index + 1 < auth_modes.len() {
-            last_error = Some(output);
-            break;
-          }
-
-          if claude_should_retry_status(details.status) && attempt <= CLAUDE_MAX_RETRIES {
-            last_error = Some(output);
-            sleep(Duration::from_millis(claude_retry_delay_ms(attempt))).await;
-            continue;
-          }
-
-          return Err(clarify_claude_error(output, context));
-        }
-        Err(err) => {
-          let message = format!("Claude request failed: {err}");
-          if claude_should_retry_transport_error(&err) && attempt <= CLAUDE_MAX_RETRIES {
-            last_error = Some(message);
-            sleep(Duration::from_millis(claude_retry_delay_ms(attempt))).await;
-            continue;
-          }
-          return Err(clarify_claude_error(message, context));
-        }
-      }
-    }
-  }
-
-  Err(clarify_claude_error(
-    last_error.unwrap_or_else(|| "Claude request failed".to_string()),
-    context,
-  ))
 }
 
 fn extract_model_ids(value: &Value) -> Vec<String> {

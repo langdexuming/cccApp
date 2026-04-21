@@ -31,7 +31,6 @@ const DEFAULT_GIT: AppSettings['git'] = {
 };
 
 const DEFAULT_ANALYSIS: AppSettings['analysis'] = {
-  provider: 'gemini',
   autoScan: true,
 };
 

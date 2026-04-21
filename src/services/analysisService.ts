@@ -5,7 +5,7 @@ import {
   isTauriRuntime,
   readProjectContext,
 } from '../lib/desktop';
-import type {AnalysisProvider, AnalysisResult, ProjectInsight, ProviderConfig} from '../types';
+import type {AppSettings, AnalysisResult, ProjectInsight} from '../types';
 
 interface ProjectTreeNode {
   name: string;
@@ -33,33 +33,36 @@ function ensureDesktopSupport() {
   }
 }
 
-function normalizeProviderId(providerType: AnalysisProvider): string {
-  return providerType === 'vertex-ai' ? 'vertex_ai' : providerType;
+function activeModelForProvider(settings: AppSettings): string {
+  const provider = settings.providers[settings.activeProvider];
+  return provider?.models?.[0] || 'default';
 }
 
-function defaultModelForProvider(providerType: AnalysisProvider): string {
-  switch (providerType) {
-    case 'gemini':
-      return 'gemini-2.5-flash';
-    case 'openai':
-      return 'gpt-5.4';
-    case 'vertex-ai':
-      return 'gemini-2.5-flash';
-    default:
-      return 'default';
+function normalizeProviderId(providerId: string): string {
+  return providerId === 'vertex-ai' ? 'vertex_ai' : providerId;
+}
+
+async function requestProjectText(
+  settings: AppSettings,
+  prompt: string,
+): Promise<string> {
+  ensureDesktopSupport();
+  const providerId = normalizeProviderId(settings.activeProvider);
+  const provider = settings.providers[settings.activeProvider];
+  const text = await generateProjectText({
+    providerId,
+    provider: {
+      ...provider,
+      id: providerId as typeof provider.id,
+      models: provider.models?.length ? [...provider.models] : ['default'],
+    },
+    activeModel: activeModelForProvider(settings),
+    prompt,
+  });
+  if (text === null) {
+    throw new Error('桌面端项目分析请求未返回结果。');
   }
-}
-
-function activeModelForProvider(providerType: AnalysisProvider, config: ProviderConfig): string {
-  return config.models[0] || defaultModelForProvider(providerType);
-}
-
-function normalizeProviderConfig(providerType: AnalysisProvider, config: ProviderConfig): ProviderConfig {
-  return {
-    ...config,
-    id: normalizeProviderId(providerType) as ProviderConfig['id'],
-    models: config.models?.length ? [...config.models] : [defaultModelForProvider(providerType)],
-  };
+  return text;
 }
 
 async function getProjectContext(): Promise<ProjectContext> {
@@ -74,24 +77,6 @@ async function getProjectContext(): Promise<ProjectContext> {
     tree: buildTreeFromOutline(payload.outline),
     dependencies: {},
   };
-}
-
-async function requestProjectText(
-  providerType: AnalysisProvider,
-  config: ProviderConfig,
-  prompt: string,
-): Promise<string> {
-  ensureDesktopSupport();
-  const text = await generateProjectText({
-    providerId: normalizeProviderId(providerType),
-    provider: normalizeProviderConfig(providerType, config),
-    activeModel: activeModelForProvider(providerType, config),
-    prompt,
-  });
-  if (text === null) {
-    throw new Error('桌面端项目分析请求未返回结果。');
-  }
-  return text;
 }
 
 function buildTreeFromOutline(outline: string): ProjectTreeNode[] {
@@ -213,8 +198,7 @@ function normalizeInsightArray(items: unknown): ProjectInsight[] {
 }
 
 export async function getProjectInsights(
-  providerType: AnalysisProvider,
-  config: ProviderConfig,
+  settings: AppSettings,
 ): Promise<AnalysisResult> {
   try {
     const context = await getProjectContext();
@@ -255,7 +239,7 @@ export async function getProjectInsights(
 ${context.outline}
 `;
 
-    const raw = await requestProjectText(providerType, config, prompt);
+    const raw = await requestProjectText(settings, prompt);
     const parsed = parseJsonResponse<{
       insights?: unknown;
       radar?: Partial<typeof DEFAULT_RADAR>;
@@ -282,8 +266,7 @@ ${context.outline}
 }
 
 export async function getInsightFix(
-  providerType: AnalysisProvider,
-  config: ProviderConfig,
+  settings: AppSettings,
   insight: ProjectInsight,
 ): Promise<{file: string; patch: string; explanation: string} | null> {
   try {
@@ -310,7 +293,7 @@ ${context.outline}
   "explanation": "修改说明"
 }
 `;
-    const raw = await requestProjectText(providerType, config, prompt);
+    const raw = await requestProjectText(settings, prompt);
     const parsed = parseJsonResponse<{file?: string; patch?: string; explanation?: string}>(raw, {});
     if (!parsed.file || !parsed.patch) {
       return null;
@@ -327,8 +310,7 @@ ${context.outline}
 }
 
 export async function generateProjectDocs(
-  providerType: AnalysisProvider,
-  config: ProviderConfig,
+  settings: AppSettings,
 ): Promise<string> {
   try {
     const context = await getProjectContext();
@@ -345,7 +327,7 @@ export async function generateProjectDocs(
 项目扫描摘要：
 ${context.outline}
 `;
-    return (await requestProjectText(providerType, config, prompt)).trim();
+    return (await requestProjectText(settings, prompt)).trim();
   } catch (error) {
     console.error('Docs Generation Error:', error);
     return '文档生成过程中出错。';
@@ -360,8 +342,7 @@ export interface PreflightCheck {
 }
 
 export async function runPreflightChecks(
-  providerType: AnalysisProvider,
-  config: ProviderConfig,
+  settings: AppSettings,
 ): Promise<PreflightCheck[]> {
   try {
     const context = await getProjectContext();
@@ -386,7 +367,7 @@ export async function runPreflightChecks(
 项目扫描摘要：
 ${context.outline}
 `;
-    const raw = await requestProjectText(providerType, config, prompt);
+    const raw = await requestProjectText(settings, prompt);
     return parseJsonResponse<PreflightCheck[]>(raw, []).filter(Boolean);
   } catch (error) {
     console.error('Preflight Error:', error);
@@ -401,8 +382,7 @@ export interface DeploymentFile {
 }
 
 export async function generateDeploymentConfig(
-  providerType: AnalysisProvider,
-  config: ProviderConfig,
+  settings: AppSettings,
   type: 'docker' | 'github-actions',
 ): Promise<DeploymentFile[]> {
   try {
@@ -432,7 +412,7 @@ ${context.outline}
   }
 ]
 `;
-    const raw = await requestProjectText(providerType, config, prompt);
+    const raw = await requestProjectText(settings, prompt);
     return parseJsonResponse<DeploymentFile[]>(raw, []).filter(
       (item) => !!item?.name && !!item?.content,
     );
@@ -451,8 +431,7 @@ export interface RoadmapItem {
 }
 
 export async function getProjectRoadmap(
-  providerType: AnalysisProvider,
-  config: ProviderConfig,
+  settings: AppSettings,
 ): Promise<RoadmapItem[]> {
   try {
     const context = await getProjectContext();
@@ -478,7 +457,7 @@ export async function getProjectRoadmap(
 项目扫描摘要：
 ${context.outline}
 `;
-    const raw = await requestProjectText(providerType, config, prompt);
+    const raw = await requestProjectText(settings, prompt);
     return parseJsonResponse<RoadmapItem[]>(raw, []).filter((item) => !!item?.title);
   } catch (error) {
     console.error('Roadmap Error:', error);
@@ -504,8 +483,7 @@ export interface ProjectDream {
 }
 
 export async function getProjectDreams(
-  providerType: AnalysisProvider,
-  config: ProviderConfig,
+  settings: AppSettings,
 ): Promise<ProjectDream[]> {
   try {
     const context = await getProjectContext();
@@ -531,7 +509,7 @@ export async function getProjectDreams(
 项目扫描摘要：
 ${context.outline}
 `;
-    const raw = await requestProjectText(providerType, config, prompt);
+    const raw = await requestProjectText(settings, prompt);
     return parseJsonResponse<ProjectDream[]>(raw, []).filter((item) => !!item?.topic);
   } catch {
     return [];
@@ -552,8 +530,7 @@ export interface KairosLog {
 }
 
 export async function getCoordinatorPlan(
-  provider: AnalysisProvider,
-  config: ProviderConfig,
+  settings: AppSettings,
   userGoal: string,
 ): Promise<CoordinatorPlan> {
   const fallback: CoordinatorPlan = {
@@ -580,7 +557,7 @@ ${context.outline}
   "verification": { "task": "验证任务", "insight": "关键洞察" }
 }
 `;
-    const raw = await requestProjectText(provider, config, prompt);
+    const raw = await requestProjectText(settings, prompt);
     return parseJsonResponse<CoordinatorPlan>(raw, fallback);
   } catch (error) {
     console.error('Coordinator Error:', error);
@@ -589,8 +566,7 @@ ${context.outline}
 }
 
 export async function runUltraplan(
-  provider: AnalysisProvider,
-  config: ProviderConfig,
+  settings: AppSettings,
   topic: string,
 ): Promise<string> {
   try {
@@ -602,7 +578,7 @@ export async function runUltraplan(
 项目扫描摘要：
 ${context.outline}
 `;
-    return await requestProjectText(provider, config, prompt);
+    return await requestProjectText(settings, prompt);
   } catch (error) {
     console.error('Ultraplan Error:', error);
     return '云端规划中继失败，请检查桌面端模型配置。';

@@ -13,7 +13,7 @@ export type LocalToolProviderPatch = {
   authToken?: string;
   baseUrl?: string;
   models?: string[];
-  wireApi?: 'messages' | 'chat_completions' | 'responses' | 'cli';
+  wireApi?: 'messages' | 'chat_completions' | 'responses' | 'cli' | 'claude_bridge';
 };
 
 export type LocalToolConfigResponse = {

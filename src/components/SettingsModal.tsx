@@ -274,41 +274,6 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                   </div>
 
                   <div className="grid gap-6">
-                    <div className="p-6 rounded-2xl border border-border-theme space-y-4 bg-zinc-50/30">
-                      <label className="text-xs font-bold text-text-secondary uppercase tracking-widest flex items-center gap-2">
-                        <Cpu className="h-3 w-3" />
-                        首选分析提供商
-                      </label>
-                      <div className="flex gap-3">
-                        {[
-                          { id: 'gemini', name: 'Gemini (带搜索代理)', icon: <Globe className="h-4 w-4" /> },
-                          { id: 'openai', name: 'OpenAI (GPT-4o)', icon: <Bot className="h-4 w-4" /> }
-                        ].map(provider => (
-                          <button
-                            key={provider.id}
-                            onClick={() => setLocalSettings(prev => ({
-                              ...prev,
-                              analysis: { ...prev.analysis, provider: provider.id as any }
-                            }))}
-                            className={cn(
-                              "flex-1 p-4 rounded-xl border flex flex-col items-center gap-3 transition-all",
-                              localSettings.analysis.provider === provider.id
-                                ? "bg-white border-accent-theme ring-2 ring-accent-theme/10 shadow-sm"
-                                : "bg-white/50 border-border-theme hover:bg-white"
-                            )}
-                          >
-                            <div className={cn(
-                              "p-2 rounded-lg transition-colors",
-                              localSettings.analysis.provider === provider.id ? "bg-accent-theme text-white" : "bg-zinc-100 text-zinc-500"
-                            )}>
-                              {provider.icon}
-                            </div>
-                            <span className="text-xs font-bold text-text-primary">{provider.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
                     <div className="p-6 rounded-2xl border border-border-theme bg-zinc-50/30 flex items-center justify-between">
                       <div className="flex gap-4 items-center">
                         <div className="p-2 bg-white rounded-xl border border-border-theme">
@@ -422,9 +387,9 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                         <select
                           value={
                             currentProviderConfig.wireApi ||
-                            (currentProvider === 'claude'
-                              ? 'messages'
-                              : currentProvider === 'gemini' || currentProvider === 'openai' || currentProvider === 'custom'
+                            (currentProvider === 'custom'
+                              ? 'chat_completions'
+                              : currentProvider === 'gemini' || currentProvider === 'claude' || currentProvider === 'openai'
                                 ? 'cli'
                                 : 'chat_completions')
                           }
@@ -437,19 +402,15 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                             </>
                           ) : currentProvider === 'claude' ? (
                             <>
-                              <option value="messages">messages</option>
-                              <option value="chat_completions">chat/completions</option>
                               <option value="cli">CLI (本地 claude)</option>
                             </>
                           ) : currentProvider === 'openai' ? (
                             <>
                               <option value="cli">CLI (本地 codex)</option>
-                              <option value="chat_completions">chat/completions</option>
-                              <option value="responses">responses</option>
                             </>
                           ) : (
                             <>
-                              <option value="cli">CLI (Claude 壳 / OpenAPI)</option>
+                              <option value="claude_bridge">Claude CLI (Bridge)</option>
                               <option value="chat_completions">chat/completions</option>
                               <option value="responses">responses</option>
                             </>
@@ -470,9 +431,17 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                             通过本地 <code>codex</code> CLI 子进程发送请求。优先使用 Codex CLI 自身的登录态；如果当前提供商填写了 API Key / Base URL，也会同步传给子进程环境变量。
                           </p>
                         ) : null}
-                        {currentProvider === 'custom' && currentProviderConfig.wireApi === 'cli' ? (
+                        {currentProvider === 'custom' && currentProviderConfig.wireApi === 'claude_bridge' ? (
                           <p className="text-[10px] leading-relaxed text-text-secondary">
-                            使用 Claude CLI 风格的本地子进程壳承载 OpenAPI 兼容模型接入。当前 Base URL、API Key / Auth Token 会直接传入子进程环境。
+                            通过本地 <code>openclaude</code> bridge 子进程走 Claude CLI 风格工作流，并把当前
+                            OpenAI-compatible 的 <code>Base URL</code>、<code>API Key</code> 和模型注入给桥接层。
+                            需要本机已安装 <code>openclaude</code>，也可以用环境变量 <code>OPENCLAUDE_CLI_PATH</code>
+                            指向可执行文件。
+                          </p>
+                        ) : null}
+                        {currentProvider === 'custom' && currentProviderConfig.wireApi !== 'claude_bridge' ? (
+                          <p className="text-[10px] leading-relaxed text-text-secondary">
+                            自定义 (OpenAI-compatible) 默认走 HTTP 兼容接口。默认使用 <code>chat/completions</code>，如果你的接口兼容 Responses API，也可以切换为 <code>responses</code>；如果希望复用 Claude CLI 风格工作流，可切到 <code>Claude CLI (Bridge)</code>。
                           </p>
                         ) : null}
                       </div>

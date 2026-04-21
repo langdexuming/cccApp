@@ -6,6 +6,28 @@ import {
   requestDesktopTitle,
 } from "../lib/desktop";
 
+function requiresDesktopCli(
+  settings: AppSettings,
+  providerId: AppSettings['activeProvider'],
+) {
+  if (providerId === 'claude' || providerId === 'openai') {
+    return true;
+  }
+  if (providerId === 'custom') {
+    return settings.providers.custom.wireApi === 'claude_bridge';
+  }
+  return false;
+}
+
+function resolveClaudeWireApi(
+  wireApi: AppSettings['providers'][AppSettings['activeProvider']]['wireApi'],
+): 'messages' | 'chat_completions' | 'responses' {
+  if (wireApi === 'chat_completions' || wireApi === 'responses') {
+    return wireApi;
+  }
+  return 'messages';
+}
+
 export async function* streamChat(
   messages: Message[], 
   settings: AppSettings,
@@ -34,6 +56,11 @@ export async function* streamChat(
     if (enabledAgents.length > 0) {
       for (const agent of enabledAgents) {
         yield `\n\n### ${agent.name} (${agent.role})\n\n`;
+
+        if (!isTauriRuntime() && requiresDesktopCli(settings, agent.provider)) {
+          yield `Warning: agent ${agent.name} requires desktop CLI mode. Use the Tauri desktop app.\n\n`;
+          continue;
+        }
 
         const agentProvider = settings.providers[agent.provider];
         const agentApiKey =
@@ -83,7 +110,7 @@ export async function* streamChat(
                 agentApiKey,
                 agent.model,
                 agentProvider.baseUrl,
-                agentProvider.wireApi === 'cli' ? 'messages' : agentProvider.wireApi,
+                resolveClaudeWireApi(agentProvider.wireApi),
               );
               break;
             case 'openai':
@@ -107,6 +134,9 @@ export async function* streamChat(
   }
 
   const provider = settings.providers[settings.activeProvider];
+  if (!isTauriRuntime() && requiresDesktopCli(settings, settings.activeProvider)) {
+    throw new Error(`${provider.name} requires desktop CLI mode in the Tauri desktop app.`);
+  }
   const apiKey =
     settings.activeProvider === 'gemini' && !provider.apiKey && typeof process !== 'undefined'
       ? process.env.GEMINI_API_KEY
@@ -143,7 +173,7 @@ export async function* streamChat(
         apiKey,
         activeModel,
         provider.baseUrl,
-        provider.wireApi === 'cli' ? 'messages' : provider.wireApi,
+        resolveClaudeWireApi(provider.wireApi),
       );
       break;
     case 'openai':
@@ -666,6 +696,10 @@ export async function generateTitle(firstMessage: string, settings: AppSettings)
   const desktopTitle = await requestDesktopTitle({firstMessage, settings});
   if (desktopTitle !== null) {
     return desktopTitle || "New Chat";
+  }
+
+  if (!isTauriRuntime() && requiresDesktopCli(settings, settings.activeProvider)) {
+    return "New Chat";
   }
 
   const provider = settings.providers[settings.activeProvider];

@@ -31,7 +31,6 @@ const DEFAULT_GIT: AppSettings['git'] = {
 };
 
 const DEFAULT_ANALYSIS: AppSettings['analysis'] = {
-  provider: 'gemini',
   autoScan: true,
 };
 
@@ -115,7 +114,7 @@ const PROVIDER_SEEDS: Record<ProviderType, ProviderSeed> = {
     apiKey: '',
     baseUrl: 'https://api.anthropic.com',
     enabled: true,
-    wireApi: 'messages',
+    wireApi: 'cli',
   },
   openai: {
     id: 'openai',
@@ -131,7 +130,7 @@ const PROVIDER_SEEDS: Record<ProviderType, ProviderSeed> = {
     apiKey: '',
     baseUrl: '',
     enabled: true,
-    wireApi: 'cli',
+    wireApi: 'chat_completions',
   },
   vertex_ai: {
     id: 'vertex_ai',
@@ -150,13 +149,7 @@ function inferWireApi(
 ): ProviderConfig['wireApi'] | undefined {
   const normalizedBaseUrl = baseUrl?.trim().toLowerCase() ?? '';
   if (providerId === 'claude') {
-    if (wireApi === 'messages' || wireApi === 'chat_completions' || wireApi === 'cli') {
-      return wireApi;
-    }
-    if (normalizedBaseUrl.includes('/chat/completions')) {
-      return 'chat_completions';
-    }
-    return 'messages';
+    return 'cli';
   }
   if (providerId === 'gemini') {
     if (wireApi === 'cli') {
@@ -164,16 +157,21 @@ function inferWireApi(
     }
     return wireApi;
   }
-  if (providerId === 'openai' || providerId === 'custom') {
-    if (wireApi === 'cli' || wireApi === 'chat_completions' || wireApi === 'responses') {
+  if (providerId === 'openai') {
+    return 'cli';
+  }
+  if (providerId === 'custom') {
+    if (
+      wireApi === 'chat_completions' ||
+      wireApi === 'responses' ||
+      wireApi === 'claude_bridge'
+    ) {
       return wireApi;
     }
-  }
-  if (
-    (providerId === 'openai' || providerId === 'custom') &&
-    normalizedBaseUrl.includes('/codex/')
-  ) {
-    return 'responses';
+    if (normalizedBaseUrl.includes('/codex/')) {
+      return 'responses';
+    }
+    return 'chat_completions';
   }
   return wireApi;
 }

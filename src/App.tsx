@@ -29,7 +29,7 @@ export default function App() {
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isDesignPanelOpen, setIsDesignPanelOpen] = useState(true);
+  const [isDesignPanelOpen, setIsDesignPanelOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
   const [hasLoadedPersistedState, setHasLoadedPersistedState] = useState(false);
   const [externalMessage, setExternalMessage] = useState<string | null>(null);

@@ -707,14 +707,14 @@ export function ChatInterface({
 
           <div className="w-px h-4 bg-border-theme mx-1" />
 
-          {/* Toggle Design Panel (Claude Artifacts style) */}
+          {/* Toggle Project Analysis Panel */}
           <button 
             onClick={onToggleDesignPanel}
             className={cn(
               "p-2 rounded-lg transition-all flex items-center gap-2",
               isDesignPanelOpen ? "bg-accent-theme text-white shadow-sm" : "hover:bg-zinc-100 text-text-secondary"
             )}
-            title={isDesignPanelOpen ? "收起设计面板" : "展开设计面板 (Artifacts)"}
+            title={isDesignPanelOpen ? "收起设计面板" : "展开项目分析"}
           >
             <Rocket className={cn("w-5 h-5", isDesignPanelOpen && "animate-pulse")} />
           </button>

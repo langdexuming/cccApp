@@ -652,7 +652,7 @@ export function Sidebar({
         >
           <div className="flex items-center gap-3">
             <Sparkles className="w-4 h-4 text-accent-theme" />
-            项目分析 Artifacts
+            项目分析
           </div>
           <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
         </button>

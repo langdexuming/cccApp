@@ -48,8 +48,11 @@ export interface AppSettings {
   git: GitSettings;
   analysis: {
     autoScan: boolean;
+    provider: ProviderType;
   };
 }
+
+export type AnalysisProvider = ProviderType;
 
 export interface PersistedAppState {
   chats: Chat[];

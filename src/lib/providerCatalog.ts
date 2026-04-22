@@ -32,6 +32,7 @@ const DEFAULT_GIT: AppSettings['git'] = {
 
 const DEFAULT_ANALYSIS: AppSettings['analysis'] = {
   autoScan: true,
+  provider: 'gemini',
 };
 
 const DEFAULT_PROVIDER_MODELS: Record<ProviderType, string[]> = {

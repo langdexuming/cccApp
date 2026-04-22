@@ -34,7 +34,7 @@ function ensureDesktopSupport() {
 }
 
 function normalizeProviderId(providerType: AnalysisProvider): string {
-  return providerType === 'vertex-ai' ? 'vertex_ai' : providerType;
+  return providerType === 'vertex_ai' ? 'vertex_ai' : providerType;
 }
 
 function defaultModelForProvider(providerType: AnalysisProvider): string {
@@ -43,7 +43,7 @@ function defaultModelForProvider(providerType: AnalysisProvider): string {
       return 'gemini-2.5-flash';
     case 'openai':
       return 'gpt-5.4';
-    case 'vertex-ai':
+    case 'vertex_ai':
       return 'gemini-2.5-flash';
     default:
       return 'default';

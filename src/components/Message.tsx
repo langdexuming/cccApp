@@ -141,8 +141,12 @@ export function Message({ message, onEdit, readOnly = false }: MessageProps) {
         "flex gap-5 max-w-full relative",
         isUser ? "flex-row-reverse" : "flex-row"
       )}>
-        <div className="flex-shrink-0">
-          {!isUser && (
+        <div className="flex-shrink-0 self-start mt-1">
+          {isUser ? (
+            <div className="w-8 h-8 rounded-xl bg-orange-100 flex items-center justify-center shadow-inner border border-orange-200">
+              <User className="w-4 h-4 text-orange-600" />
+            </div>
+          ) : (
             <div className="w-8 h-8 rounded-xl bg-orange-500 flex items-center justify-center shadow-inner">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
@@ -151,7 +155,7 @@ export function Message({ message, onEdit, readOnly = false }: MessageProps) {
         
         <div className={cn(
           "flex-1 min-w-0 space-y-2 relative group/content",
-          isUser && !isEditing ? "bg-[#F3F3F2] p-4 rounded-2xl max-w-[85%]" : "p-1"
+          isUser && !isEditing ? "bg-[#F3F3F2] p-4 rounded-3xl max-w-[85%] shadow-sm" : "p-2 sm:p-4 rounded-3xl bg-transparent"
         )}>
           {isEditing ? (
             <div className="space-y-3">
@@ -185,8 +189,8 @@ export function Message({ message, onEdit, readOnly = false }: MessageProps) {
             </div>
           ) : (
             <div className={cn(
-              "prose prose-zinc max-w-none prose-p:leading-relaxed prose-p:text-[15px] prose-p:text-text-primary prose-headings:text-xl prose-headings:mb-3 prose-strong:text-text-primary",
-              isUser ? "" : ""
+              "prose prose-zinc max-w-none prose-p:leading-relaxed prose-p:text-[15px] prose-p:text-text-primary prose-headings:text-xl prose-headings:font-bold prose-headings:text-text-primary prose-headings:mb-4 prose-strong:text-text-primary prose-strong:font-bold prose-ul:my-4 prose-li:my-1",
+              isUser ? "prose-p:text-[15px]" : "antialiased"
             )}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}

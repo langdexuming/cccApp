@@ -536,37 +536,31 @@ export function Sidebar({
 
   return (
     <div className="w-[300px] h-full bg-bg-sidebar border-r border-border-theme flex flex-col">
-      <div className="px-4 pt-6 pb-4 border-b border-border-theme bg-white/80">
-        <div className="rounded-2xl border border-orange-100 bg-orange-50/70 px-4 py-3 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-xs font-bold uppercase tracking-widest text-accent-theme">
-                当前运行通道
-              </div>
-              <div className="mt-1 text-sm font-semibold text-text-primary truncate">{activeRuntime}</div>
-            </div>
-            <Sparkles className="w-5 h-5 text-accent-theme shrink-0" />
+      <div className="px-4 py-4 flex flex-col gap-3 border-b border-border-theme bg-white/80">
+        <div className="flex items-center justify-between gap-3 px-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="w-4 h-4 text-accent-theme shrink-0 animate-pulse" />
+            <div className="text-xs font-bold text-text-primary truncate">{activeRuntime}</div>
+            {isTyping && (
+              <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse ml-1" title="AI Typing..." />
+            )}
           </div>
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              onClick={() => onNewChat(currentWorkspace)}
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-text-primary shadow-sm hover:shadow transition-all"
-            >
-              <Plus className="w-3.5 h-3.5 text-accent-theme" />
-              {currentWorkspace ? '在当前工作区新建对话' : '新建本地对话'}
-            </button>
-            {isTyping ? (
-              <span className="text-[10px] font-bold text-orange-600">AI 正在回复</span>
-            ) : null}
-          </div>
+          <button
+            onClick={() => onNewChat(currentWorkspace)}
+            className="p-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-accent-theme transition-all"
+            title="新建对话"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
-        <div className="mt-3 relative">
-          <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="搜索工作区、对话或来源"
-            className="w-full rounded-xl border border-border-theme bg-white px-9 py-2 text-sm text-text-primary outline-none transition focus:border-accent-theme"
+            placeholder="快捷搜索..."
+            className="w-full rounded-xl border border-zinc-100 bg-zinc-50 px-9 py-1.5 text-xs text-text-primary outline-none transition focus:border-accent-theme focus:bg-white"
           />
         </div>
       </div>

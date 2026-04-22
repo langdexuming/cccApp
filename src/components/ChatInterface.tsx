@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, Zap, Brain, Command, Terminal, Globe, Search, Users, Settings, Bug, CheckCircle2, FileText, Rocket, Box, FolderInput } from 'lucide-react';
+import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronUp, Zap, Brain, Command, Terminal, Globe, Search, Users, Settings, Bug, CheckCircle2, FileText, Rocket, Box, FolderInput } from 'lucide-react';
 import {
   Message as MessageType,
   Chat,
@@ -84,7 +84,6 @@ export function ChatInterface({
   const [isLoading, setIsLoading] = useState(false);
   const [showCommands, setShowCommands] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
-  const [showModelSearch, setShowModelSearch] = useState(false);
   const [selectedModel, setSelectedModel] = useState(
     pickValidModel(chat?.model, settings.providers[settings.activeProvider].models),
   );
@@ -93,6 +92,10 @@ export function ChatInterface({
   const [isPickingWorkspace, setIsPickingWorkspace] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showProviderDropdown, setShowProviderDropdown] = useState(false);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [showEffortDropdown, setShowEffortDropdown] = useState(false);
+  const [isPromptsCollapsed, setIsPromptsCollapsed] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const isReadOnlyView = Boolean(externalConversation);
@@ -123,9 +126,9 @@ export function ChatInterface({
   const providers = (Object.values(settings.providers) as any[]).filter(p => p.enabled);
 
   const efforts = [
-    { id: 'low', name: '快速', icon: Zap },
-    { id: 'medium', name: '标准', icon: Brain },
-    { id: 'high', name: '深度', icon: Command },
+    { id: 'low', name: 'Fast', icon: Zap },
+    { id: 'medium', name: 'Std', icon: Brain },
+    { id: 'high', name: 'Deep', icon: Command },
   ];
 
   const commands = [
@@ -487,45 +490,39 @@ export function ChatInterface({
               Ctrl+B
             </kbd>
           </button>
-          <div className="flex items-center gap-2 px-2 py-1 hover:bg-zinc-50 rounded-lg cursor-pointer transition-colors group">
-            <h2 className="text-[14px] font-semibold text-text-primary truncate max-w-[150px] md:max-w-xs">
+          <div className="flex items-center gap-1.5 px-2 py-1 hover:bg-zinc-50 rounded-xl cursor-pointer transition-colors group group-relative">
+            <h2 className="text-[13px] font-bold text-text-primary truncate max-w-[140px] md:max-w-xs">
               {activeConversationTitle}
             </h2>
-            <ChevronDown className="w-3.5 h-3.5 text-text-secondary group-hover:text-text-primary transition-colors" />
+            <ChevronDown className="w-3 h-3 text-text-secondary group-hover:text-text-primary transition-colors" />
           </div>
+
+          {isTauriRuntime() && (
+            <div className="h-4 w-px bg-border-theme mx-1" />
+          )}
+
           {isTauriRuntime() && (
             isReadOnlyView ? (
               <div
-                className="flex items-center gap-2 min-w-0 max-w-[320px] lg:max-w-md ml-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2"
+                className="flex items-center gap-2 min-w-0 max-w-[200px] lg:max-w-xs ml-1 rounded-lg border border-zinc-100 bg-zinc-50/50 px-2.5 py-1"
                 title={activeConversationWorkspace || undefined}
               >
-                <FolderInput className="w-4 h-4 text-text-secondary shrink-0" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
-                    外部只读记录
-                  </div>
-                  <div className="text-[11px] text-text-primary truncate">
+                <FolderInput className="w-3.5 h-3.5 text-text-secondary shrink-0" aria-hidden />
+                <div className="min-w-0 flex-1 flex items-baseline gap-2">
+                  <span className="text-[10px] font-bold text-text-primary truncate">
                     {externalConversation?.sourceLabel}
-                  </div>
-                  <div className="text-[10px] text-text-secondary truncate">
-                    {activeConversationWorkspace || '未绑定工作区'}
-                  </div>
+                  </span>
+                  <span className="text-[9px] text-text-secondary truncate opacity-60">
+                    {activeConversationWorkspace || '未绑定'}
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onNewChat(activeConversationWorkspace)}
-                  className="shrink-0 rounded border border-border-theme bg-white px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-zinc-50"
-                  title="在当前工作区新建本地对话"
-                >
-                  新建
-                </button>
               </div>
             ) : (
               <div
-                className="flex items-center gap-1.5 min-w-0 max-w-[240px] lg:max-w-sm ml-1"
-                title="当前会话关联的工作区路径"
+                className="flex items-center gap-1 min-w-0 max-w-[200px] lg:max-w-sm ml-1 group/ws"
+                title="关联工作区路径"
               >
-                <FolderInput className="w-3.5 h-3.5 text-text-secondary shrink-0" aria-hidden />
+                <FolderInput className="w-3 h-3 text-text-secondary shrink-0" aria-hidden />
                 <input
                   value={workspaceDraft}
                   onChange={(e) => setWorkspaceDraft(e.target.value)}
@@ -537,139 +534,201 @@ export function ChatInterface({
                       (e.target as HTMLInputElement).blur();
                     }
                   }}
-                  placeholder="输入工作区路径"
-                  className="text-[11px] text-text-secondary bg-zinc-50 border border-border-theme rounded px-2 py-1 w-full min-w-0 outline-none focus:border-accent-theme"
-                  title="用于关联 CLI 会话工作区；留空则不绑定工作区"
+                  placeholder="项目路径..."
+                  className="text-[10px] text-text-secondary bg-transparent hover:bg-zinc-50 border-none rounded px-2 py-1 w-full min-w-0 outline-none focus:bg-zinc-100 focus:text-text-primary transition-colors"
                 />
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handlePickWorkspace();
-                  }}
-                  disabled={isPickingWorkspace}
-                  className="shrink-0 rounded border border-border-theme bg-zinc-50 px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                  title="选择工作区"
-                >
-                  {isPickingWorkspace ? '选择中' : '选择'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleOpenWorkspace();
-                  }}
-                  disabled={
-                    isPickingWorkspace || (workspaceDraft.trim() ? !looksLikeWorkspacePath(workspaceDraft) : false)
-                  }
-                  className="shrink-0 rounded border border-border-theme bg-zinc-50 px-2 py-1 text-[10px] font-bold text-text-secondary transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                  title="打开工作区"
-                >
-                  打开
-                </button>
               </div>
             )
           )}
         </div>
         <div className="flex items-center gap-2">
           {/* Provider Selector */}
-          <div className="flex items-center bg-zinc-100/80 p-1 rounded-xl gap-1">
-            {providers.map((p) => {
-              const Icon = providerIcons[p.id as ProviderType] || Globe;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => onUpdateSettings({ ...settings, activeProvider: p.id })}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all",
-                    settings.activeProvider === p.id 
-                      ? "bg-white text-text-primary shadow-sm" 
-                      : "text-text-secondary hover:text-text-primary"
-                  )}
-                  title={p.name}
+          <div className="relative">
+            <button
+              onClick={() => setShowProviderDropdown(!showProviderDropdown)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold transition-all bg-zinc-100 hover:bg-zinc-200 border border-transparent",
+                showProviderDropdown && "border-accent-theme/30 bg-white shadow-sm"
+              )}
+            >
+              {(() => {
+                const p = settings.providers[settings.activeProvider];
+                const Icon = providerIcons[p.id as ProviderType] || Globe;
+                return (
+                  <>
+                    <Icon className="w-3.5 h-3.5 text-accent-theme" />
+                    <span className="hidden sm:inline uppercase">{p.name}</span>
+                    <ChevronDown className={cn("w-3 h-3 text-text-secondary transition-transform", showProviderDropdown && "rotate-180")} />
+                  </>
+                );
+              })()}
+            </button>
+
+            <AnimatePresence>
+              {showProviderDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 4, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                  className="absolute left-0 top-full mt-1 w-40 bg-white border border-border-theme rounded-2xl shadow-2xl overflow-hidden z-[100] p-1.5"
                 >
-                  <Icon className={cn("w-3 h-3", settings.activeProvider === p.id ? "text-accent-theme" : "")} />
-                  <span className="hidden lg:inline">{p.name}</span>
-                </button>
-              );
-            })}
+                  {providers.map((p) => {
+                    const Icon = providerIcons[p.id as ProviderType] || Globe;
+                    const isActive = settings.activeProvider === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          onUpdateSettings({ ...settings, activeProvider: p.id });
+                          setShowProviderDropdown(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[11px] font-medium transition-all text-left",
+                          isActive 
+                            ? "bg-accent-theme/5 text-text-primary" 
+                            : "text-text-secondary hover:bg-zinc-50 hover:text-text-primary"
+                        )}
+                      >
+                        <Icon className={cn("w-3.5 h-3.5", isActive ? "text-accent-theme" : "text-zinc-400")} />
+                        <span className="truncate">{p.name}</span>
+                        {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-accent-theme" />}
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <div className="w-px h-4 bg-border-theme mx-1" />
 
           {/* Model Selector */}
-          <div className="flex items-center bg-zinc-100/80 p-1 rounded-xl gap-1">
-            <AnimatePresence mode="wait">
-              {showModelSearch ? (
+          <div className="relative">
+            <button
+              onClick={() => setShowModelDropdown(!showModelDropdown)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold transition-all bg-zinc-100 hover:bg-zinc-200 border border-transparent",
+                showModelDropdown && "border-accent-theme/30 bg-white shadow-sm"
+              )}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-accent-theme" />
+              <span className="hidden md:inline truncate max-w-[120px]">
+                {selectedModel || '选择模型'}
+              </span>
+              <ChevronDown className={cn("w-3 h-3 text-text-secondary transition-transform", showModelDropdown && "rotate-180")} />
+            </button>
+
+            <AnimatePresence>
+              {showModelDropdown && (
                 <motion.div
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 120, opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  className="relative flex items-center"
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 4, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                  className="absolute left-0 top-full mt-1 w-64 bg-white border border-border-theme rounded-2xl shadow-2xl overflow-hidden z-[100] flex flex-col"
                 >
-                  <Search className="w-3 h-3 absolute left-2 text-text-secondary" />
-                  <input
-                    autoFocus
-                    value={modelSearch}
-                    onChange={(e) => setModelSearch(e.target.value)}
-                    onBlur={() => !modelSearch && setShowModelSearch(false)}
-                    placeholder="搜索模型..."
-                    className="w-full pl-7 pr-2 py-1 bg-white rounded-lg text-[10px] border border-border-theme outline-none focus:border-accent-theme transition-all"
-                  />
+                  <div className="p-3 border-b border-zinc-50 bg-zinc-50/50">
+                    <div className="relative flex items-center">
+                      <Search className="w-3 h-3 absolute left-3 text-zinc-400" />
+                      <input
+                        autoFocus
+                        value={modelSearch}
+                        onChange={(e) => setModelSearch(e.target.value)}
+                        placeholder="搜索模型..."
+                        className="w-full pl-8 pr-3 py-1.5 bg-white rounded-lg text-[11px] border border-zinc-200 outline-none focus:border-accent-theme transition-all"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="max-h-[300px] overflow-y-auto p-1.5 no-scrollbar">
+                    {models.length > 0 ? (
+                      models.map((m) => {
+                        const isActive = selectedModel === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => {
+                              setSelectedModel(m.id);
+                              setShowModelDropdown(false);
+                            }}
+                            className={cn(
+                              "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[11px] font-medium transition-all text-left",
+                              isActive 
+                                ? "bg-accent-theme/5 text-text-primary" 
+                                : "text-text-secondary hover:bg-zinc-50 hover:text-text-primary"
+                            )}
+                          >
+                            <Sparkles className={cn("w-3.5 h-3.5", isActive ? "text-accent-theme" : "text-zinc-400")} />
+                            <span className="truncate">{m.name}</span>
+                            {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-accent-theme" />}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="px-4 py-8 text-center">
+                         <p className="text-[10px] text-zinc-400">未找到匹配的模型</p>
+                      </div>
+                    )}
+                  </div>
                 </motion.div>
-              ) : (
-                <button
-                  onClick={() => setShowModelSearch(true)}
-                  className="p-1.5 hover:bg-white rounded-lg transition-colors text-text-secondary hover:text-text-primary"
-                  title="搜索模型"
-                >
-                  <Search className="w-3.5 h-3.5" />
-                </button>
               )}
             </AnimatePresence>
-
-            <div className="flex items-center gap-1 max-w-[200px] overflow-x-auto no-scrollbar">
-              {models.length > 0 ? (
-                models.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => setSelectedModel(m.id)}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all whitespace-nowrap",
-                      selectedModel === m.id 
-                        ? "bg-white text-text-primary shadow-sm" 
-                        : "text-text-secondary hover:text-text-primary"
-                    )}
-                    title={m.name}
-                  >
-                    <m.icon className={cn("w-3 h-3", selectedModel === m.id ? "text-accent-theme" : "")} />
-                    <span className="max-w-[140px] truncate">{m.name}</span>
-                  </button>
-                ))
-              ) : (
-                <span className="text-[10px] text-text-secondary px-2">无匹配模型</span>
-              )}
-            </div>
           </div>
 
           <div className="w-px h-4 bg-border-theme mx-1" />
 
           {/* Effort Selector */}
-          <div className="flex items-center bg-zinc-100/80 p-1 rounded-xl gap-1">
-            {efforts.map((e) => (
-              <button
-                key={e.id}
-                onClick={() => setSelectedEffort(e.id as any)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all",
-                  selectedEffort === e.id 
-                    ? "bg-white text-text-primary shadow-sm" 
-                    : "text-text-secondary hover:text-text-primary"
-                )}
-                title={`思考强度 ${e.name}`}
-              >
-                <e.icon className={cn("w-3 h-3", selectedEffort === e.id ? "text-blue-500" : "")} />
-                <span className="hidden xl:inline">{e.name}</span>
-              </button>
-            ))}
+          <div className="relative">
+            <button
+              onClick={() => setShowEffortDropdown(!showEffortDropdown)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold transition-all bg-zinc-100 hover:bg-zinc-200 border border-transparent",
+                showEffortDropdown && "border-accent-theme/30 bg-white shadow-sm"
+              )}
+            >
+              {(() => {
+                const e = efforts.find(eff => eff.id === selectedEffort) || efforts[1];
+                return (
+                  <>
+                    <e.icon className="w-3.5 h-3.5 text-blue-500" />
+                    <span className="hidden lg:inline">{e.name}</span>
+                    <ChevronDown className={cn("w-3 h-3 text-text-secondary transition-transform", showEffortDropdown && "rotate-180")} />
+                  </>
+                );
+              })()}
+            </button>
+
+            <AnimatePresence>
+              {showEffortDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 4, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                  className="absolute right-0 top-full mt-1 w-32 bg-white border border-border-theme rounded-2xl shadow-2xl overflow-hidden z-[100] p-1.5"
+                >
+                  {efforts.map((e) => {
+                    const isActive = selectedEffort === e.id;
+                    return (
+                      <button
+                        key={e.id}
+                        onClick={() => {
+                          setSelectedEffort(e.id as any);
+                          setShowEffortDropdown(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[11px] font-medium transition-all text-left",
+                          isActive 
+                            ? "bg-blue-50 text-blue-700" 
+                            : "text-text-secondary hover:bg-zinc-50 hover:text-text-primary"
+                        )}
+                      >
+                        <e.icon className={cn("w-3.5 h-3.5", isActive ? "text-blue-500" : "text-zinc-400")} />
+                        <span className="text-[11px]">{e.name}</span>
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <div className="w-px h-4 bg-border-theme mx-1" />
@@ -994,22 +1053,41 @@ export function ChatInterface({
           ) : (
             <>
               {!input.trim() && !isLoading && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-none no-scrollbar justify-center"
-                >
-                  {AI_PROMPTS.slice(0, 3).map((prompt, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handlePromptClick(prompt.text)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-medium bg-white border border-border-theme hover:border-accent-theme/30 hover:shadow-md transition-all active:scale-95 whitespace-nowrap text-text-primary"
-                    >
-                      <span className="opacity-70">{prompt.icon}</span>
-                      {prompt.text}
-                    </button>
-                  ))}
-                </motion.div>
+                <div className="flex flex-col items-center mb-5">
+                  <button 
+                    onClick={() => setIsPromptsCollapsed(!isPromptsCollapsed)}
+                    className="group/suggest flex items-center gap-2 mb-3 px-2 py-0.5 rounded-lg hover:bg-zinc-50 transition-colors"
+                  >
+                    <div className="h-px w-6 bg-zinc-100 group-hover/suggest:bg-zinc-200 transition-colors" />
+                    <div className="flex items-center gap-1.5 text-[9px] font-black text-zinc-300 group-hover/suggest:text-zinc-500 uppercase tracking-[0.2em] transition-colors">
+                      {isPromptsCollapsed ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronUp className="w-2.5 h-2.5" />}
+                      Suggestions
+                    </div>
+                    <div className="h-px w-6 bg-zinc-100 group-hover/suggest:bg-zinc-200 transition-colors" />
+                  </button>
+
+                  <AnimatePresence>
+                    {!isPromptsCollapsed && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0, y: 10 }}
+                        animate={{ opacity: 1, height: 'auto', y: 0 }}
+                        exit={{ opacity: 0, height: 0, y: 10 }}
+                        className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar justify-center w-full"
+                      >
+                        {AI_PROMPTS.slice(0, 3).map((prompt, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handlePromptClick(prompt.text)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold bg-white border border-border-theme hover:border-accent-theme/20 hover:shadow-sm transition-all active:scale-95 whitespace-nowrap text-text-primary"
+                          >
+                            <span className="opacity-50">{prompt.icon}</span>
+                            {prompt.text}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               )}
 
               <AnimatePresence>
@@ -1065,9 +1143,6 @@ export function ChatInterface({
                     <div className="relative group/upload">
                       <button className="p-2 text-text-secondary hover:text-text-primary hover:bg-zinc-50 rounded-xl transition-all active:scale-95 flex items-center gap-1.5">
                         <Paperclip className="w-4 h-4" />
-                        <span className="text-[10px] font-bold text-zinc-400 group-hover/upload:text-accent-theme transition-colors">
-                          DOCX/PPTX/XLSX
-                        </span>
                       </button>
                       <div className="absolute bottom-full mb-2 left-0 opacity-0 group-hover/upload:opacity-100 transition-all pointer-events-none translate-y-2 group-hover/upload:translate-y-0">
                         <div className="bg-text-primary text-white px-3 py-1.5 rounded-lg text-[9px] font-bold shadow-xl whitespace-nowrap flex items-center gap-2">
@@ -1119,7 +1194,6 @@ export function ChatInterface({
             </>
           )}
           <p className="mt-4 text-center text-[10px] text-zinc-400 font-medium">
-            项目全生命周期设计系统 · 由 Gemini & Vertex AI 提供支持
           </p>
         </div>
       </div>

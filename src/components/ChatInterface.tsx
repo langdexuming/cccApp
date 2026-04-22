@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, ArrowUp, Loader2, Sparkles, Mic, MicOff, History, X, MessageSquare, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronUp, Zap, Brain, Command, Terminal, Globe, Search, Users, Settings, Bug, CheckCircle2, FileText, Rocket, Box, FolderInput } from 'lucide-react';
 import {
   Message as MessageType,
+  Attachment,
   Chat,
   AppSettings,
   ProviderType,
@@ -96,6 +97,7 @@ export function ChatInterface({
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showEffortDropdown, setShowEffortDropdown] = useState(false);
   const [isPromptsCollapsed, setIsPromptsCollapsed] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const isReadOnlyView = Boolean(externalConversation);
@@ -257,6 +259,34 @@ export function ChatInterface({
     }
   }, [externalInput, onClearExternalInput]);
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const base64 = event.target?.result as string;
+            const newAttachment: Attachment = {
+              id: Date.now().toString() + Math.random().toString(36).substring(2),
+              type: 'image',
+              name: file.name || `image-${Date.now()}.png`,
+              url: base64,
+              size: file.size,
+            };
+            setAttachments(prev => [...prev, newAttachment]);
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  };
+
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setInput(value);
@@ -374,13 +404,14 @@ export function ChatInterface({
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (isReadOnlyView || !input.trim() || isLoading) return;
+    if (isReadOnlyView || (!input.trim() && attachments.length === 0) || isLoading) return;
 
     const userMessage: MessageType = {
       id: Date.now().toString(),
       role: 'user',
       content: input.trim(),
       timestamp: Date.now(),
+      attachments: attachments.length > 0 ? [...attachments] : undefined,
     };
 
     let currentChat = chat;
@@ -418,6 +449,7 @@ export function ChatInterface({
     }
 
     setInput('');
+    setAttachments([]);
     setShowCommands(false);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setIsLoading(true);
@@ -1053,26 +1085,14 @@ export function ChatInterface({
           ) : (
             <>
               {!input.trim() && !isLoading && (
-                <div className="flex flex-col items-center mb-5">
-                  <button 
-                    onClick={() => setIsPromptsCollapsed(!isPromptsCollapsed)}
-                    className="group/suggest flex items-center gap-2 mb-3 px-2 py-0.5 rounded-lg hover:bg-zinc-50 transition-colors"
-                  >
-                    <div className="h-px w-6 bg-zinc-100 group-hover/suggest:bg-zinc-200 transition-colors" />
-                    <div className="flex items-center gap-1.5 text-[9px] font-black text-zinc-300 group-hover/suggest:text-zinc-500 uppercase tracking-[0.2em] transition-colors">
-                      {isPromptsCollapsed ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronUp className="w-2.5 h-2.5" />}
-                      Suggestions
-                    </div>
-                    <div className="h-px w-6 bg-zinc-100 group-hover/suggest:bg-zinc-200 transition-colors" />
-                  </button>
-
+                <div className="flex flex-col items-center mb-1">
                   <AnimatePresence>
                     {!isPromptsCollapsed && (
                       <motion.div
                         initial={{ opacity: 0, height: 0, y: 10 }}
                         animate={{ opacity: 1, height: 'auto', y: 0 }}
                         exit={{ opacity: 0, height: 0, y: 10 }}
-                        className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar justify-center w-full"
+                        className="flex gap-1.5 overflow-x-auto pb-3 scrollbar-none no-scrollbar justify-center w-full"
                       >
                         {AI_PROMPTS.slice(0, 3).map((prompt, idx) => (
                           <button
@@ -1123,18 +1143,70 @@ export function ChatInterface({
               <motion.div
                 layout
                 className={cn(
-                  'relative flex flex-col p-4 bg-white border border-border-theme rounded-2xl transition-all duration-300 ease-out min-h-[120px]',
+                  'relative flex flex-col pt-1 pb-4 px-4 bg-white border border-border-theme rounded-2xl transition-all duration-300 ease-out min-h-[64px]',
                   'shadow-[0_8px_30px_rgb(0,0,0,0.04)]',
                   'focus-within:shadow-[0_20px_40px_rgba(0,0,0,0.08)] focus-within:border-accent-theme/40',
-                  input.trim() ? 'border-accent-theme/20 shadow-[0_12px_40px_rgba(217,119,87,0.08)]' : '',
+                  input.trim() || attachments.length > 0 ? 'border-accent-theme/20 shadow-[0_12px_40px_rgba(217,119,87,0.08)]' : '',
                 )}
               >
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <button
+                    onClick={() => setIsPromptsCollapsed(!isPromptsCollapsed)}
+                    className={cn(
+                      "flex items-center gap-2 p-1.5 rounded-xl transition-all active:scale-95 group/gemini",
+                      isPromptsCollapsed 
+                        ? "text-zinc-400 hover:text-accent-theme hover:bg-orange-50/50" 
+                        : "text-accent-theme bg-orange-50 shadow-sm border border-orange-100/50"
+                    )}
+                    title={isPromptsCollapsed ? "显示 AI 建议" : "收起 AI 建议"}
+                  >
+                    <div className="relative">
+                      <Sparkles className={cn("w-4 h-4 transition-all duration-500", !isPromptsCollapsed ? "scale-110 rotate-[15deg]" : "group-hover/gemini:rotate-12")} />
+                      {!isPromptsCollapsed && (
+                        <div className="absolute inset-0 bg-accent-theme/20 blur-lg animate-pulse" />
+                      )}
+                    </div>
+                    <span className={cn(
+                      "text-[10px] font-bold tracking-wider transition-all",
+                      isPromptsCollapsed ? "text-zinc-400 group-hover/gemini:text-accent-theme" : "text-accent-theme"
+                    )}>
+                      AI 建议
+                    </span>
+                  </button>
+                </div>
+
+                {attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3 px-1">
+                    {attachments.map(att => (
+                      <div key={att.id} className="relative group/att">
+                        {att.type === 'image' ? (
+                          <div className="w-16 h-16 rounded-xl border border-border-theme overflow-hidden bg-zinc-50 shadow-sm transition-transform hover:scale-105">
+                            <img src={att.url} alt={att.name} className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 p-2 rounded-xl border border-border-theme bg-zinc-50 shadow-sm transition-transform hover:scale-105">
+                            <FileText className="w-4 h-4 text-accent-theme" />
+                            <span className="text-[10px] font-bold text-text-primary max-w-[100px] truncate">{att.name}</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => removeAttachment(att.id)}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity shadow-lg"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <textarea
                   ref={textareaRef}
                   rows={1}
                   value={input}
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
                   placeholder="在这里输入您的问题..."
                   className="flex-1 bg-transparent border-0 focus:ring-0 resize-none py-2 px-1 text-text-primary placeholder-zinc-400 text-[15px] leading-relaxed"
                 />
@@ -1174,10 +1246,10 @@ export function ChatInterface({
                     )}
                     <button
                       onClick={() => handleSubmit()}
-                      disabled={!input.trim() || isLoading}
+                      disabled={(!input.trim() && attachments.length === 0) || isLoading}
                       className={cn(
                         'w-10 h-10 rounded-xl transition-all flex items-center justify-center group',
-                        input.trim() && !isLoading
+                        (input.trim() || attachments.length > 0) && !isLoading
                           ? 'bg-accent-theme text-white shadow-lg shadow-accent-theme/20 hover:scale-105 active:scale-95'
                           : 'bg-[#F3F3F2] text-zinc-300',
                       )}

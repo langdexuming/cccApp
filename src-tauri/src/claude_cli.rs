@@ -111,10 +111,8 @@ fn build_args(
   args.push("--output-format".to_string());
   args.push("stream-json".to_string());
   args.push("--verbose".to_string());
-  // Use "plan" permission mode to prevent the CLI from hanging on tool
-  // approval prompts when used as a non-interactive bridge.
   args.push("--permission-mode".to_string());
-  args.push("plan".to_string());
+  args.push("default".to_string());
   args.push("--model".to_string());
   args.push(model.to_string());
 

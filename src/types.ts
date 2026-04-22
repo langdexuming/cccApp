@@ -1,10 +1,19 @@
 export type Role = 'user' | 'assistant' | 'system';
 
+export interface Attachment {
+  id: string;
+  type: 'image' | 'file';
+  name: string;
+  url: string; // base64 or blob url
+  size?: number;
+}
+
 export interface Message {
   id: string;
   role: Role;
   content: string;
   timestamp: number;
+  attachments?: Attachment[];
 }
 
 export type ProviderType = 'gemini' | 'claude' | 'openai' | 'custom' | 'vertex_ai';
@@ -18,7 +27,7 @@ export interface ProviderConfig {
   baseUrl?: string;
   enabled: boolean;
   models: string[];
-  wireApi?: 'messages' | 'chat_completions' | 'responses' | 'cli' | 'claude_cli' | 'claude_bridge';
+  wireApi?: 'messages' | 'chat_completions' | 'responses' | 'cli' | 'claude_cli';
 }
 
 export interface AgentConfig {

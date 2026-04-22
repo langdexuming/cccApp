@@ -6,6 +6,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Message as MessageType } from '../types';
 import { cn } from '../lib/utils';
 import { User, Sparkles, Copy, Check, ChevronDown, ChevronUp, Pencil, X as CloseIcon, Save } from 'lucide-react';
+import { motion } from 'motion/react';
 
 interface MessageProps {
   message: MessageType;
@@ -152,7 +153,7 @@ export function Message({ message, onEdit, readOnly = false }: MessageProps) {
             </div>
           )}
         </div>
-
+        
         <div className={cn(
           "flex-1 min-w-0 space-y-2 relative group/content",
           isUser && !isEditing ? "bg-[#F3F3F2] p-4 rounded-3xl max-w-[85%] shadow-sm" : "p-2 sm:p-4 rounded-3xl bg-transparent"
@@ -210,6 +211,23 @@ export function Message({ message, onEdit, readOnly = false }: MessageProps) {
               >
                 {message.content}
               </ReactMarkdown>
+            </div>
+          )}
+
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-4">
+              {message.attachments.map(att => (
+                <div key={att.id}>
+                  {att.type === 'image' && (
+                    <motion.div 
+                      layoutId={att.id}
+                      className="rounded-2xl border border-zinc-200 overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow cursor-zoom-in"
+                    >
+                      <img src={att.url} alt={att.name} className="max-w-[300px] max-h-[300px] object-cover" />
+                    </motion.div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 

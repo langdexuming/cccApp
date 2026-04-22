@@ -299,21 +299,21 @@ AI 建议：${insight.suggestion}
             exit={isEmbedded ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 20 }}
             className={cn(
               "relative bg-bg-canvas flex flex-col overflow-hidden",
-              isEmbedded ? "w-full h-full" : "w-full max-w-2xl rounded-3xl shadow-2xl max-h-[80vh]"
+              isEmbedded ? "w-full h-full" : "w-full max-w-xl rounded-2xl shadow-2xl max-h-[75vh]"
             )}
           >
             {/* Header */}
             <div className={cn(
-              "px-6 pt-4 border-b border-border-theme flex flex-col transition-all",
+              "px-5 pt-3 border-b border-border-theme flex flex-col transition-all",
               isEmbedded ? "bg-bg-canvas" : "bg-zinc-50/50"
             )}>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-accent-theme/5 rounded-lg border border-accent-theme/10">
-                    <Sparkles className="w-4 h-4 text-accent-theme" />
+                  <div className="p-1 bg-accent-theme/5 rounded-lg border border-accent-theme/10">
+                    <Sparkles className="w-3.5 h-3.5 text-accent-theme" />
                   </div>
                   <div>
-                    <h2 className="text-sm font-bold text-text-primary tracking-tight uppercase">设计与分析</h2>
+                    <h2 className="text-xs font-bold text-text-primary tracking-tight uppercase">AI Analysis</h2>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
@@ -392,12 +392,12 @@ AI 建议：${insight.suggestion}
                           : "border-transparent text-text-secondary hover:text-text-primary"
                       )}
                     >
-                      {tab === 'insights' ? '建议' : 
-                       tab === 'graph' ? '图谱' :
-                       tab === 'roadmap' ? '路线' :
-                       tab === 'docs' ? '文档' :
-                       tab === 'coordinator' ? '协调' :
-                       tab === 'kairos' ? '巡逻' : '实验'}
+                      {tab === 'insights' ? 'Insights' : 
+                       tab === 'graph' ? 'Map' :
+                       tab === 'roadmap' ? 'Plan' :
+                       tab === 'docs' ? 'Docs' :
+                       tab === 'coordinator' ? 'Sync' :
+                       tab === 'kairos' ? 'Logs' : 'Lab'}
                     </button>
                   ))}
                 </div>
@@ -591,8 +591,8 @@ AI 建议：${insight.suggestion}
                         </div>
                       </div>
                       <div className="text-center">
-                        <p className="text-sm font-bold text-text-primary italic animate-pulse">正在连接 Google Search 感知 2024/2025 最新技术趋势...</p>
-                        <p className="text-xs text-text-secondary mt-1">深度扫描项目架构并对比全球最佳实践</p>
+                        <p className="text-sm font-bold text-text-primary italic animate-pulse">Syncing with latest tech trends via Deep Search...</p>
+                        <p className="text-xs text-text-secondary mt-1">Analyzing architecture vs global best practices</p>
                       </div>
                     </div>
                   ) : analysis ? (
@@ -600,14 +600,14 @@ AI 建议：${insight.suggestion}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                         <ProjectRadar scores={analysis.radar} />
                         <div className="p-6 rounded-3xl border border-border-theme bg-zinc-50/50 flex flex-col justify-center">
-                          <h4 className="text-xs font-black text-text-secondary uppercase tracking-widest mb-2">项目 AI 综述</h4>
+                          <h4 className="text-xs font-black text-text-secondary uppercase tracking-widest mb-2">Project Overview</h4>
                           <p className="text-sm text-text-primary font-medium leading-relaxed">
                             {analysis.context.summary}
                           </p>
                           <div className="mt-4 pt-4 border-t border-zinc-200">
                              <div className="flex items-center gap-2 text-[10px] text-text-secondary font-bold">
                                <FileCode className="w-3 h-3" />
-                               扫描范围: {analysis.context.tree.length} 个根节点 / 核心业务逻辑
+                               Scope: {analysis.context.tree.length} nodes / core logic
                              </div>
                           </div>
                         </div>
@@ -633,7 +633,7 @@ AI 建议：${insight.suggestion}
                               "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
                               priorityColors[insight.priority]
                             )}>
-                              {insight.priority} 优先级
+                              {insight.priority}
                             </span>
                           </div>
                           <p className="text-xs text-text-secondary mb-3 leading-relaxed">

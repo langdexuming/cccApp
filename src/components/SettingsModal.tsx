@@ -37,6 +37,15 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
   const isProviderTab = activeTab !== 'collaboration' && activeTab !== 'git';
   const currentProvider = (isProviderTab ? activeTab : 'gemini') as ProviderType;
   const currentProviderConfig = localSettings.providers[currentProvider];
+  const currentWireApi =
+    currentProviderConfig?.wireApi === 'claude_cli'
+      ? 'claude_bridge'
+      : currentProviderConfig?.wireApi ||
+        (currentProvider === 'custom'
+          ? 'chat_completions'
+          : currentProvider === 'gemini' || currentProvider === 'claude' || currentProvider === 'openai'
+            ? 'cli'
+            : 'chat_completions');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -387,14 +396,7 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-text-secondary">接口协议</label>
                         <select
-                          value={
-                            currentProviderConfig.wireApi ||
-                            (currentProvider === 'custom'
-                              ? 'chat_completions'
-                              : currentProvider === 'gemini' || currentProvider === 'claude' || currentProvider === 'openai'
-                                ? 'cli'
-                                : 'chat_completions')
-                          }
+                          value={currentWireApi}
                           onChange={(e) => updateProvider(currentProvider, {wireApi: e.target.value as ProviderConfig['wireApi']})}
                           className="w-full rounded-xl border border-border-theme bg-white px-4 py-2.5 text-sm"
                         >
@@ -412,7 +414,7 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                             </>
                           ) : (
                             <>
-                              <option value="claude_cli">Claude CLI (本地 claude)</option>
+                              <option value="claude_bridge">Claude Bridge (OpenAI 兼容)</option>
                               <option value="chat_completions">chat/completions</option>
                               <option value="responses">responses</option>
                             </>
@@ -433,17 +435,18 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                             通过本地 <code>codex</code> CLI 子进程发送请求。优先使用 Codex CLI 自身的登录态；如果当前提供商填写了 API Key / Base URL，也会同步传给子进程环境变量。
                           </p>
                         ) : null}
-                        {currentProvider === 'custom' && currentProviderConfig.wireApi === 'claude_cli' ? (
+                        {currentProvider === 'custom' && currentWireApi === 'claude_bridge' ? (
                           <p className="text-[10px] leading-relaxed text-text-secondary">
-                            桌面版会在本地启动一个 Anthropic 兼容的翻译代理，用官方 <code>claude</code> CLI 与它对话；
-                            代理再把请求转译为 <code>/chat/completions</code> 发给当前 Base URL / API Key，并把 <code>model</code> 字段改写为上面选中的那一个。
-                            因为 Claude CLI 会在本地校验 <code>--model</code>，代理对 CLI 侧始终声称模型为 <code>{CLI_PLACEHOLDER_MODEL_LABEL}</code>，真正发往后端的模型以你选的为准。
-                            需要本机已安装官方 Claude Code CLI（<code>claude</code>）。
+                            <strong>Claude Bridge 模式</strong>：通过本地 <code>claude</code> CLI 与翻译代理对接 OpenAI 兼容 API（如 <code>https://opencode.ai/zen/go/v1</code>）。
+                            在 Base URL 中填入 OpenAI 兼容的端点地址，API Key 填入对应平台的密钥。
+                            代理会自动在 Base URL 后追加 <code>/chat/completions</code>（如果尚未包含），并在流式请求中添加 <code>stream_options</code> 以获取用量统计。
+                            Claude CLI 侧会固定使用占位模型 <code>{CLI_PLACEHOLDER_MODEL_LABEL}</code> 通过本地校验，真正发往后端的模型仍以你当前选择为准。
+                            需要本机已安装 Claude Code CLI（<code>claude</code>）。
                           </p>
                         ) : null}
-                        {currentProvider === 'custom' && currentProviderConfig.wireApi !== 'claude_cli' ? (
+                        {currentProvider === 'custom' && currentWireApi !== 'claude_bridge' ? (
                           <p className="text-[10px] leading-relaxed text-text-secondary">
-                            自定义 (OpenAI-compatible) 默认走 HTTP 兼容接口。默认使用 <code>chat/completions</code>，如果你的接口兼容 Responses API，也可以切换为 <code>responses</code>；如果希望让本机 Claude CLI 使用这个接口，可切到 <code>Claude CLI (本地 claude)</code>。
+                            自定义 (OpenAI-compatible) 默认走 HTTP 兼容接口。默认使用 <code>chat/completions</code>，如果你的接口兼容 Responses API，也可以切换为 <code>responses</code>；如果希望通过本地 Claude CLI 连接 OpenAI 兼容后端，可切换到 <code>Claude Bridge</code>。
                           </p>
                         ) : null}
                       </div>

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
+use tauri::AppHandle;
 
 use crate::models::{
   AppSettings, ChatCompletionPayload, KairosLogEntry, KairosLogsResponse, Message, ProjectAnalysisPayload,
@@ -257,6 +258,7 @@ User task:\n\
     active_model: model,
     effort: None,
     workspace: None,
+    request_id: None,
   }
 }
 
@@ -323,12 +325,12 @@ pub async fn read_project_context(payload: ProjectContextPayload) -> Result<Proj
 }
 
 #[tauri::command]
-pub async fn generate_project_text(payload: ProjectGeneratePayload) -> Result<String, String> {
+pub async fn generate_project_text(app: AppHandle, payload: ProjectGeneratePayload) -> Result<String, String> {
   let root = resolve_root_path(&payload.root_path)?;
   let outline = collect_project_outline(&root, 14_000)?;
   let root_display = root.display().to_string();
   let completion = build_chat_payload(&payload, &outline, &root_display);
-  crate::chat::chat_completion(completion).await
+  crate::chat::chat_completion(app, completion).await
 }
 
 #[tauri::command]
@@ -387,7 +389,7 @@ pub fn get_kairos_logs(payload: ProjectContextPayload) -> Result<KairosLogsRespo
 }
 
 #[tauri::command]
-pub async fn analyze_project(payload: ProjectAnalysisPayload) -> Result<String, String> {
+pub async fn analyze_project(app: AppHandle, payload: ProjectAnalysisPayload) -> Result<String, String> {
   let root = resolve_root_path(&payload.root_path)?;
   let outline = collect_project_outline(&root, 14_000)?;
   let root_display = root.display().to_string();
@@ -416,7 +418,8 @@ Workspace root: `{root_display}`\n\n\
     active_model: payload.active_model.trim().to_string(),
     effort: None,
     workspace: None,
+    request_id: None,
   };
 
-  crate::chat::chat_completion(completion).await
+  crate::chat::chat_completion(app, completion).await
 }

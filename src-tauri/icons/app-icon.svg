@@ -1,4 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#2563eb"/>
-  <text x="256" y="310" text-anchor="middle" font-family="system-ui,sans-serif" font-size="220" font-weight="700" fill="#ffffff">C</text>
+  <rect width="512" height="512" rx="112" fill="#f97316"/>
+  <path
+    d="M256 112L285 201C290 220 305 235 324 240L400 256L324 272C305 277 290 292 285 311L256 400L227 311C222 292 207 277 188 272L112 256L188 240C207 235 222 220 227 201L256 112Z"
+    fill="#ffffff"
+  />
+  <path
+    d="M372 114L384 162C386 170 392 176 400 178L446 190L400 202C392 204 386 210 384 218L372 266L360 218C358 210 352 204 344 202L298 190L344 178C352 176 358 170 360 162L372 114Z"
+    fill="#ffffff"
+    opacity="0.95"
+  />
+  <circle cx="152" cy="156" r="16" fill="#ffffff" opacity="0.9" />
 </svg>

@@ -27,7 +27,7 @@ export interface ProviderConfig {
   baseUrl?: string;
   enabled: boolean;
   models: string[];
-  wireApi?: 'messages' | 'chat_completions' | 'responses' | 'cli' | 'claude_cli';
+  wireApi?: 'messages' | 'chat_completions' | 'responses' | 'cli' | 'claude_cli' | 'claude_bridge';
 }
 
 export interface AgentConfig {

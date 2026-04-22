@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { Message, AppSettings } from "../types";
 import {
   isTauriRuntime,
-  requestDesktopChatCompletion,
+  requestDesktopChatCompletionStream,
   requestDesktopTitle,
 } from "../lib/desktop";
 
@@ -14,7 +14,10 @@ function requiresDesktopCli(
     return true;
   }
   if (providerId === 'custom') {
-    return settings.providers.custom.wireApi === 'claude_cli';
+    return (
+      settings.providers.custom.wireApi === 'claude_cli' ||
+      settings.providers.custom.wireApi === 'claude_bridge'
+    );
   }
   return false;
 }
@@ -39,15 +42,17 @@ export async function* streamChat(
     throw new Error('当前没有可用模型，请先在设置中补充模型列表。');
   }
 
-  const desktopResponse = await requestDesktopChatCompletion({
-    messages,
-    settings,
-    activeModel,
-    effort,
-    workspace,
-  });
-  if (desktopResponse !== null) {
-    yield* yieldTextInChunks(desktopResponse);
+  if (isTauriRuntime()) {
+    const desktopStream = requestDesktopChatCompletionStream({
+      messages,
+      settings,
+      activeModel,
+      effort,
+      workspace,
+    });
+    for await (const chunk of desktopStream) {
+      yield chunk;
+    }
     return;
   }
 
@@ -379,7 +384,7 @@ function claudeChatCompletionsUrl(baseUrl?: string) {
 }
 
 function claudeUses1mContext(model: string) {
-  return model.trim().endsWith('[1m]');
+  return /\[1m\]$/i.test(model.trim());
 }
 
 function claudeApiModel(model: string) {

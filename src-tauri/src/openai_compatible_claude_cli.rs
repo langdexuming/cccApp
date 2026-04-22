@@ -32,6 +32,7 @@ fn proxy_config_from_provider(provider: &ProviderConfig, model: &str) -> Result<
     upstream_base_url: base_url.trim_end_matches('/').to_string(),
     upstream_api_key: api_key.to_string(),
     forced_model: forced_model.to_string(),
+    extra_headers: Vec::new(),
   })
 }
 

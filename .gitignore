@@ -32,6 +32,8 @@ runtime/
 
 # 本地缓存、工具链与杂项生成
 .local-msvc/
+.cargo-local/
+.rustup-local/
 .claude/
 artifacts/
 *.stackdump

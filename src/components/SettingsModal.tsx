@@ -413,6 +413,7 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                           ) : (
                             <>
                               <option value="claude_cli">Claude CLI (本地 claude)</option>
+                              <option value="claude_bridge">Claude Bridge (OpenAI 兼容)</option>
                               <option value="chat_completions">chat/completions</option>
                               <option value="responses">responses</option>
                             </>
@@ -441,7 +442,15 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                             需要本机已安装官方 Claude Code CLI（<code>claude</code>）。
                           </p>
                         ) : null}
-                        {currentProvider === 'custom' && currentProviderConfig.wireApi !== 'claude_cli' ? (
+                        {currentProvider === 'custom' && currentProviderConfig.wireApi === 'claude_bridge' ? (
+                          <p className="text-[10px] leading-relaxed text-text-secondary">
+                            <strong>Claude Bridge 模式</strong>：与 "Claude CLI" 模式相同，但专用于对接 OpenAI 兼容 API（如 <code>https://opencode.ai/zen/go/v1</code>）。
+                            在 Base URL 中填入 OpenAI 兼容的端点地址，API Key 填入对应平台的密钥。
+                            代理会自动在 Base URL 后追加 <code>/chat/completions</code>（如果尚未包含），并在流式请求中添加 <code>stream_options</code> 以获取用量统计。
+                            需要本机已安装 Claude Code CLI（<code>claude</code>）。
+                          </p>
+                        ) : null}
+                        {currentProvider === 'custom' && currentProviderConfig.wireApi !== 'claude_cli' && currentProviderConfig.wireApi !== 'claude_bridge' ? (
                           <p className="text-[10px] leading-relaxed text-text-secondary">
                             自定义 (OpenAI-compatible) 默认走 HTTP 兼容接口。默认使用 <code>chat/completions</code>，如果你的接口兼容 Responses API，也可以切换为 <code>responses</code>；如果希望让本机 Claude CLI 使用这个接口，可切到 <code>Claude CLI (本地 claude)</code>。
                           </p>

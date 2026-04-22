@@ -21,6 +21,9 @@ pub struct ProxyConfig {
   pub upstream_base_url: String,
   pub upstream_api_key: String,
   pub forced_model: String,
+  /// Optional extra headers to forward (e.g. custom auth schemes).
+  #[allow(dead_code)]
+  pub extra_headers: Vec<(String, String)>,
 }
 
 #[derive(Clone)]
@@ -65,6 +68,8 @@ pub async fn start_proxy(config: ProxyConfig) -> Result<ProxyHandle, String> {
 
   let auth_token = format!("ccc-proxy-{}", Uuid::new_v4());
   let http = Client::builder()
+    .timeout(std::time::Duration::from_secs(300))
+    .connect_timeout(std::time::Duration::from_secs(30))
     .build()
     .map_err(|err| format!("build anthropic proxy http client failed: {err}"))?;
 
@@ -115,16 +120,19 @@ async fn handle_messages(
     .filter(|value| !value.trim().is_empty())
     .unwrap_or_else(|| state.config.forced_model.clone());
   let openai_body = translate_request(&body, &state.config.forced_model);
-  let upstream_url = format!(
-    "{}/chat/completions",
-    state.config.upstream_base_url.trim_end_matches('/')
-  );
+  let upstream_url = build_upstream_url(&state.config.upstream_base_url);
 
-  let response = match state
+  log::info!("[anthropic-proxy] forwarding to upstream: {upstream_url} model={}", state.config.forced_model);
+
+  let mut req = state
     .http
     .post(&upstream_url)
     .header("authorization", format!("Bearer {}", state.config.upstream_api_key))
-    .header("content-type", "application/json")
+    .header("content-type", "application/json");
+  for (k, v) in &state.config.extra_headers {
+    req = req.header(k.as_str(), v.as_str());
+  }
+  let response = match req
     .json(&openai_body)
     .send()
     .await
@@ -142,6 +150,7 @@ async fn handle_messages(
   let upstream_status = response.status();
   if !upstream_status.is_success() {
     let body_text = response.text().await.unwrap_or_default();
+    log::warn!("[anthropic-proxy] upstream error {upstream_status}: {body_text}");
     let error_type = map_error_type(upstream_status);
     return build_error_response(to_axum_status(upstream_status), error_type, &body_text);
   }
@@ -154,7 +163,13 @@ async fn handle_messages(
       .and_then(|v| v.to_str().ok())
       .unwrap_or("")
       .to_ascii_lowercase();
-    if content_type.contains("text/event-stream") {
+    // Many OpenAI-compatible APIs use text/event-stream, but some use
+    // application/octet-stream, text/plain, or other content types for SSE.
+    // Treat anything that is NOT obviously JSON as a potential SSE stream.
+    let looks_like_sse = content_type.contains("text/event-stream")
+      || content_type.contains("octet-stream")
+      || (!content_type.contains("application/json") && !content_type.is_empty());
+    if looks_like_sse {
       let sse_stream = translate_openai_sse_stream(response, model);
       Sse::new(sse_stream)
         .keep_alive(KeepAlive::default())
@@ -219,6 +234,21 @@ fn build_error_response(status: StatusCode, error_type: &str, message: &str) -> 
 
 // --- Request translation ----------------------------------------------------
 
+/// Build the upstream /chat/completions URL, handling various base URL formats.
+fn build_upstream_url(base_url: &str) -> String {
+  let trimmed = base_url.trim().trim_end_matches('/');
+  // If the URL already ends with /chat/completions, use as-is
+  if trimmed.ends_with("/chat/completions") {
+    return trimmed.to_string();
+  }
+  // If the URL ends with /v1, append /chat/completions
+  if trimmed.ends_with("/v1") {
+    return format!("{trimmed}/chat/completions");
+  }
+  // Otherwise append /chat/completions directly
+  format!("{trimmed}/chat/completions")
+}
+
 pub(crate) fn translate_request(anthropic: &Value, forced_model: &str) -> Value {
   let mut openai = Map::new();
   openai.insert("model".into(), json!(forced_model));
@@ -260,6 +290,14 @@ pub(crate) fn translate_request(anthropic: &Value, forced_model: &str) -> Value 
     if let Some(v) = anthropic.get(src) {
       openai.insert(dst.into(), v.clone());
     }
+  }
+
+  // Ask upstream to include usage stats in the streaming response
+  if anthropic.get("stream").and_then(Value::as_bool).unwrap_or(false) {
+    openai.insert(
+      "stream_options".into(),
+      json!({"include_usage": true}),
+    );
   }
 
   if let Some(stop) = anthropic.get("stop_sequences") {
@@ -338,6 +376,9 @@ fn translate_message(msg: &Value, out: &mut Vec<Value>) {
               "function": {"name": name, "arguments": args},
             }));
           }
+          // Skip thinking/reasoning blocks — they have no equivalent in the
+          // OpenAI chat/completions format and should not be forwarded.
+          "thinking" | "redacted_thinking" | "reasoning" => {}
           "tool_result" => {
             if !text_buf.is_empty() || !tool_calls.is_empty() {
               out.push(build_role_message(role, &mut text_buf, &mut tool_calls));
@@ -859,7 +900,10 @@ fn translate_openai_sse_stream(
       let Some(chunk_result) = stream.next().await else {
         break;
       };
-      let Ok(chunk) = chunk_result else { break };
+      let Ok(chunk) = chunk_result else {
+        log::warn!("[anthropic-proxy] SSE stream read error, flushing");
+        break;
+      };
       buf.extend_from_slice(&chunk);
 
       while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
@@ -871,6 +915,11 @@ fn translate_openai_sse_stream(
           .trim_end_matches('\r')
           .to_string();
         let line = raw.trim();
+        // Skip empty lines, SSE comments (lines starting with ':'),
+        // and event-type lines ("event: ...").
+        if line.is_empty() || line.starts_with(':') || line.starts_with("event:") {
+          continue;
+        }
         if !line.starts_with("data:") {
           continue;
         }
@@ -886,6 +935,7 @@ fn translate_openai_sse_stream(
           break;
         }
         let Ok(value) = serde_json::from_str::<Value>(payload) else {
+          log::debug!("[anthropic-proxy] skipping unparseable SSE payload: {payload}");
           continue;
         };
         for ev in translator.handle_chunk(&value) {
@@ -894,7 +944,26 @@ fn translate_openai_sse_stream(
       }
     }
 
+    // Try to parse any remaining buffered data (handles the case where
+    // the stream ends without a trailing newline).
     if !done {
+      let trailing = String::from_utf8_lossy(&buf).trim().to_string();
+      if !trailing.is_empty() {
+        for line in trailing.lines() {
+          let line = line.trim();
+          if line.starts_with("data:") {
+            let payload = line.trim_start_matches("data:").trim();
+            if payload == "[DONE]" {
+              break;
+            }
+            if let Ok(value) = serde_json::from_str::<Value>(payload) {
+              for ev in translator.handle_chunk(&value) {
+                let _ = tx.send(Ok(ev.to_sse()));
+              }
+            }
+          }
+        }
+      }
       for ev in translator.flush() {
         let _ = tx.send(Ok(ev.to_sse()));
       }

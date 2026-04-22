@@ -142,16 +142,20 @@ export function Message({ message, onEdit, readOnly = false }: MessageProps) {
         isUser ? "flex-row-reverse" : "flex-row"
       )}>
         <div className="flex-shrink-0">
-          {!isUser && (
+          {isUser ? (
+            <div className="w-8 h-8 rounded-xl bg-zinc-700 flex items-center justify-center shadow-inner">
+              <User className="w-4 h-4 text-white" />
+            </div>
+          ) : (
             <div className="w-8 h-8 rounded-xl bg-orange-500 flex items-center justify-center shadow-inner">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
           )}
         </div>
-        
+
         <div className={cn(
           "flex-1 min-w-0 space-y-2 relative group/content",
-          isUser && !isEditing ? "bg-[#F3F3F2] p-4 rounded-2xl max-w-[85%]" : "p-1"
+          isUser && !isEditing ? "bg-[#F3F3F2] p-4 rounded-2xl max-w-[85%]" : "max-w-[90%]"
         )}>
           {isEditing ? (
             <div className="space-y-3">

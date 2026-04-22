@@ -108,6 +108,12 @@ async fn handle_messages(
   Json(body): Json<Value>,
 ) -> Response {
   let want_stream = body.get("stream").and_then(Value::as_bool).unwrap_or(true);
+  let cli_model = body
+    .get("model")
+    .and_then(Value::as_str)
+    .map(str::to_string)
+    .filter(|value| !value.trim().is_empty())
+    .unwrap_or_else(|| state.config.forced_model.clone());
   let openai_body = translate_request(&body, &state.config.forced_model);
   let upstream_url = format!(
     "{}/chat/completions",
@@ -141,7 +147,7 @@ async fn handle_messages(
   }
 
   if want_stream {
-    let model = state.config.forced_model.clone();
+    let model = cli_model.clone();
     let content_type = response
       .headers()
       .get("content-type")
@@ -182,7 +188,7 @@ async fn handle_messages(
         )
       }
     };
-    let anthropic = translate_response_json(&openai_value, &state.config.forced_model);
+    let anthropic = translate_response_json(&openai_value, &cli_model);
     Json(anthropic).into_response()
   }
 }
@@ -1122,6 +1128,39 @@ mod tests {
     assert_eq!(map_finish_reason("tool_calls"), "tool_use");
     assert_eq!(map_finish_reason("content_filter"), "stop_sequence");
     assert_eq!(map_finish_reason("anything_else"), "end_turn");
+  }
+
+  #[test]
+  fn openai_json_to_chunks_emits_content_and_finish() {
+    let openai = json!({
+      "choices":[{"message":{"content":"hi"},"finish_reason":"stop"}],
+      "usage":{"prompt_tokens":1,"completion_tokens":2}
+    });
+    let chunks = openai_json_to_chunks(&openai);
+    assert_eq!(chunks.len(), 2);
+    assert_eq!(chunks[0]["choices"][0]["delta"]["content"], json!("hi"));
+    assert_eq!(chunks[1]["choices"][0]["finish_reason"], json!("stop"));
+    assert_eq!(chunks[1]["usage"]["prompt_tokens"], json!(1));
+  }
+
+  #[test]
+  fn openai_json_to_chunks_emits_tool_call_arguments() {
+    let openai = json!({
+      "choices":[{
+        "message":{
+          "content": Value::Null,
+          "tool_calls":[{"id":"t1","type":"function","function":{"name":"f","arguments":"{\"a\":1}"}}],
+        },
+        "finish_reason":"tool_calls",
+      }],
+    });
+    let chunks = openai_json_to_chunks(&openai);
+    let tc = &chunks[0]["choices"][0]["delta"]["tool_calls"][0];
+    assert_eq!(tc["id"], json!("t1"));
+    assert_eq!(tc["function"]["name"], json!("f"));
+    assert_eq!(tc["function"]["arguments"], json!("{\"a\":1}"));
+    let last = chunks.last().unwrap();
+    assert_eq!(last["choices"][0]["finish_reason"], json!("tool_calls"));
   }
 
   #[test]

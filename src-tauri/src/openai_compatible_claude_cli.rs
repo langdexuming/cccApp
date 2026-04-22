@@ -4,6 +4,12 @@ use crate::claude_cli::{
 };
 use crate::models::{Message, ProviderConfig};
 
+/// Placeholder Claude-family model name handed to the official `claude` CLI so its
+/// local `--model` validation passes. The proxy rewrites the forwarded request's
+/// `model` field to the user-configured upstream model before calling the
+/// OpenAI-compatible backend, so this name only has to survive the CLI's own checks.
+const CLI_PLACEHOLDER_MODEL: &str = "claude-3-5-sonnet-latest";
+
 fn proxy_config_from_provider(provider: &ProviderConfig, model: &str) -> Result<ProxyConfig, String> {
   let base_url = provider
     .base_url
@@ -41,9 +47,14 @@ pub async fn chat_with_openai_compatible_claude_cli(
     base_url: proxy.base_url.clone(),
     auth_token: proxy.auth_token.clone(),
   };
-  let result =
-    chat_with_claude_cli_overridden(provider, model, messages, workspace, Some(&override_env))
-      .await;
+  let result = chat_with_claude_cli_overridden(
+    provider,
+    CLI_PLACEHOLDER_MODEL,
+    messages,
+    workspace,
+    Some(&override_env),
+  )
+  .await;
   proxy.shutdown().await;
   result
 }
@@ -59,8 +70,13 @@ pub async fn title_with_openai_compatible_claude_cli(
     base_url: proxy.base_url.clone(),
     auth_token: proxy.auth_token.clone(),
   };
-  let result =
-    title_with_claude_cli_overridden(provider, model, prompt, Some(&override_env)).await;
+  let result = title_with_claude_cli_overridden(
+    provider,
+    CLI_PLACEHOLDER_MODEL,
+    prompt,
+    Some(&override_env),
+  )
+  .await;
   proxy.shutdown().await;
   result
 }

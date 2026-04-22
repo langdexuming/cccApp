@@ -8,6 +8,8 @@ import {fetchLocalToolConfig, mergeLocalToolConfigIntoSettings} from '../lib/mer
 import {fetchRemoteProviderModels, requestGitSync, checkDesktopUpdate, isTauriRuntime} from '../lib/desktop';
 import {BUILTIN_PROVIDER_MODELS} from '../lib/providerCatalog';
 
+const CLI_PLACEHOLDER_MODEL_LABEL = 'claude-3-5-sonnet-latest';
+
 type SettingsTab = ProviderType | 'collaboration' | 'git' | 'analysis' | 'system';
 
 interface SettingsModalProps {
@@ -434,7 +436,8 @@ export function SettingsModal({isOpen, onClose, settings, onSave}: SettingsModal
                         {currentProvider === 'custom' && currentProviderConfig.wireApi === 'claude_cli' ? (
                           <p className="text-[10px] leading-relaxed text-text-secondary">
                             桌面版会在本地启动一个 Anthropic 兼容的翻译代理，用官方 <code>claude</code> CLI 与它对话；
-                            代理再把请求转译为 <code>/chat/completions</code> 发给当前 Base URL / API Key，并把模型名改写为上面选中的那一个。
+                            代理再把请求转译为 <code>/chat/completions</code> 发给当前 Base URL / API Key，并把 <code>model</code> 字段改写为上面选中的那一个。
+                            因为 Claude CLI 会在本地校验 <code>--model</code>，代理对 CLI 侧始终声称模型为 <code>{CLI_PLACEHOLDER_MODEL_LABEL}</code>，真正发往后端的模型以你选的为准。
                             需要本机已安装官方 Claude Code CLI（<code>claude</code>）。
                           </p>
                         ) : null}

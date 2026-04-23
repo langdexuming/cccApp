@@ -56,9 +56,7 @@ export function mergeLocalToolConfigIntoSettings(
     const authToken = patch.authToken?.trim() ? patch.authToken : cur.authToken;
     const baseUrl = patch.baseUrl?.trim() ? patch.baseUrl : cur.baseUrl;
     const mergedModels = patch.models?.length
-      ? id === 'claude'
-        ? [...patch.models]
-        : Array.from(new Set([...patch.models, ...cur.models]))
+      ? Array.from(new Set([...patch.models, ...cur.models]))
       : cur.models;
     next.providers[id] = {
       ...cur,

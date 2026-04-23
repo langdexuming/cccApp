@@ -186,10 +186,6 @@ function normalizeProviderModel(
     return undefined;
   }
 
-  if (providerId === 'claude' && !value.toLowerCase().startsWith('claude-')) {
-    return undefined;
-  }
-
   return value;
 }
 

@@ -11,7 +11,6 @@ use axum::{
   Json, Router,
 };
 use futures_util::{Stream, StreamExt};
-use log::{info, warn};
 use reqwest::Client;
 use serde_json::{json, Map, Value};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
@@ -35,22 +34,6 @@ pub struct ProxyHandle {
   pub auth_token: String,
   shutdown: Option<oneshot::Sender<()>>,
   join: Option<JoinHandle<()>>,
-}
-
-fn redact_secret(value: &str) -> String {
-  let trimmed = value.trim();
-  if trimmed.is_empty() {
-    return "<empty>".to_string();
-  }
-
-  let chars: Vec<char> = trimmed.chars().collect();
-  if chars.len() <= 8 {
-    return format!("{}***", chars.iter().take(3).collect::<String>());
-  }
-
-  let head: String = chars.iter().take(4).collect();
-  let tail: String = chars.iter().rev().take(4).copied().collect::<Vec<char>>().into_iter().rev().collect();
-  format!("{head}***{tail}")
 }
 
 impl ProxyHandle {
@@ -89,13 +72,6 @@ pub async fn start_proxy(config: ProxyConfig) -> Result<ProxyHandle, String> {
     config: Arc::new(config),
     http,
   };
-  info!(
-    "[Claude Bridge Proxy] starting; local_bind={}; upstream_base_url={}; upstream_api_key={}; forced_model={}",
-    addr,
-    state.config.upstream_base_url,
-    redact_secret(&state.config.upstream_api_key),
-    state.config.forced_model,
-  );
 
   let app = Router::new()
     .route("/v1/messages", post(handle_messages))
@@ -143,13 +119,6 @@ async fn handle_messages(
     "{}/chat/completions",
     state.config.upstream_base_url.trim_end_matches('/')
   );
-  info!(
-    "[Claude Bridge Proxy] forwarding request; cli_model={}; forced_model={}; upstream_url={}; stream={}",
-    cli_model,
-    state.config.forced_model,
-    upstream_url,
-    want_stream,
-  );
 
   let response = match state
     .http
@@ -162,15 +131,10 @@ async fn handle_messages(
   {
     Ok(r) => r,
     Err(err) => {
-      warn!(
-        "[Claude Bridge Proxy] upstream request failed; upstream_url={}; error={}",
-        upstream_url,
-        err
-      );
       return build_error_response(
         StatusCode::BAD_GATEWAY,
         "api_error",
-        &format!("upstream request failed at {upstream_url}: {err}"),
+        &format!("upstream request failed: {err}"),
       )
     }
   };
@@ -178,20 +142,8 @@ async fn handle_messages(
   let upstream_status = response.status();
   if !upstream_status.is_success() {
     let body_text = response.text().await.unwrap_or_default();
-    warn!(
-      "[Claude Bridge Proxy] upstream returned error; upstream_url={}; status={}; body_summary={}",
-      upstream_url,
-      upstream_status.as_u16(),
-      summarize_upstream_error(&body_text)
-    );
     let error_type = map_error_type(upstream_status);
-    let message = format!(
-      "upstream {} at {}: {}",
-      upstream_status.as_u16(),
-      upstream_url,
-      summarize_upstream_error(&body_text)
-    );
-    return build_error_response(to_axum_status(upstream_status), error_type, &message);
+    return build_error_response(to_axum_status(upstream_status), error_type, &body_text);
   }
 
   if want_stream {
@@ -263,50 +215,6 @@ fn build_error_response(status: StatusCode, error_type: &str, message: &str) -> 
     "error": {"type": error_type, "message": message},
   });
   (status, Json(body)).into_response()
-}
-
-fn summarize_upstream_error(body_text: &str) -> String {
-  let trimmed = body_text.trim();
-  if trimmed.is_empty() {
-    return "upstream returned an empty error response".to_string();
-  }
-
-  if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
-    if let Some(message) = value
-      .get("error")
-      .and_then(|error| error.get("message"))
-      .and_then(Value::as_str)
-      .map(str::trim)
-      .filter(|text| !text.is_empty())
-    {
-      return message.to_string();
-    }
-
-    if let Some(message) = value
-      .get("message")
-      .and_then(Value::as_str)
-      .map(str::trim)
-      .filter(|text| !text.is_empty())
-    {
-      return message.to_string();
-    }
-
-    if let Some(detail) = value
-      .get("detail")
-      .and_then(Value::as_str)
-      .map(str::trim)
-      .filter(|text| !text.is_empty())
-    {
-      return detail.to_string();
-    }
-  }
-
-  const MAX_ERROR_LEN: usize = 1200;
-  if trimmed.len() <= MAX_ERROR_LEN {
-    trimmed.to_string()
-  } else {
-    format!("{}...", &trimmed[..MAX_ERROR_LEN])
-  }
 }
 
 // --- Request translation ----------------------------------------------------
@@ -1273,19 +1181,5 @@ mod tests {
       map_error_type(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
       "api_error"
     );
-  }
-
-  #[test]
-  fn summarize_upstream_error_prefers_nested_error_message() {
-    let body = r#"{"error":{"message":"model kimi-k2.6 not found"}}"#;
-    assert_eq!(
-      summarize_upstream_error(body),
-      "model kimi-k2.6 not found"
-    );
-  }
-
-  #[test]
-  fn summarize_upstream_error_falls_back_to_plain_text() {
-    assert_eq!(summarize_upstream_error("gateway timeout"), "gateway timeout");
   }
 }

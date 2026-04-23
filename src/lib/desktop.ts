@@ -20,21 +20,6 @@ type ChatCompletionPayload = {
   activeModel: string;
   effort?: Chat['effort'];
   workspace?: string;
-  requestId?: string;
-};
-
-type ChatStreamChunkPayload = {
-  requestId: string;
-  chunk: string;
-};
-
-type ChatStreamDonePayload = {
-  requestId: string;
-};
-
-type ChatStreamErrorPayload = {
-  requestId: string;
-  error: string;
 };
 
 type TitlePayload = {
@@ -176,109 +161,6 @@ export async function requestDesktopChatCompletion(
     return null;
   }
   return invokeCommand<string>('chat_completion', {payload});
-}
-
-function createDesktopRequestId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `desktop-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function normalizeInvokeError(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  if (typeof error === 'string' && error.trim()) {
-    return error;
-  }
-  return String(error);
-}
-
-export async function* requestDesktopChatCompletionStream(
-  payload: ChatCompletionPayload,
-): AsyncGenerator<string, void, void> {
-  if (!isTauriRuntime()) {
-    return;
-  }
-
-  const requestId = createDesktopRequestId();
-  const {listen} = await import('@tauri-apps/api/event');
-  const queue: string[] = [];
-  let done = false;
-  let errorMessage: string | null = null;
-  let receivedChunk = false;
-  let wake: (() => void) | null = null;
-
-  const notify = () => {
-    const pending = wake;
-    wake = null;
-    pending?.();
-  };
-
-  const cleanup = await Promise.all([
-    listen<ChatStreamChunkPayload>('desktop-chat-chunk', (event) => {
-      if (event.payload.requestId !== requestId || !event.payload.chunk) {
-        return;
-      }
-      receivedChunk = true;
-      queue.push(event.payload.chunk);
-      notify();
-    }),
-    listen<ChatStreamDonePayload>('desktop-chat-done', (event) => {
-      if (event.payload.requestId !== requestId) {
-        return;
-      }
-      done = true;
-      notify();
-    }),
-    listen<ChatStreamErrorPayload>('desktop-chat-error', (event) => {
-      if (event.payload.requestId !== requestId) {
-        return;
-      }
-      errorMessage = event.payload.error || 'Desktop chat request failed';
-      done = true;
-      notify();
-    }),
-  ]);
-
-  try {
-    void invokeCommand<string>('chat_completion', {
-      payload: {...payload, requestId},
-    })
-      .then((result) => {
-        if (!receivedChunk && result) {
-          queue.push(result);
-        }
-        done = true;
-        notify();
-      })
-      .catch((error) => {
-        if (!errorMessage) {
-          errorMessage = normalizeInvokeError(error);
-        }
-        done = true;
-        notify();
-      });
-
-    while (!done || queue.length > 0) {
-      if (queue.length > 0) {
-        yield queue.shift()!;
-        continue;
-      }
-      await new Promise<void>((resolve) => {
-        wake = resolve;
-      });
-    }
-
-    if (errorMessage) {
-      throw new Error(errorMessage);
-    }
-  } finally {
-    for (const unlisten of cleanup) {
-      unlisten();
-    }
-  }
 }
 
 export async function requestDesktopTitle(

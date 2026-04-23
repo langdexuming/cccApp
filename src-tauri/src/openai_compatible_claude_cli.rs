@@ -3,92 +3,12 @@ use crate::claude_cli::{
   chat_with_claude_cli_overridden, title_with_claude_cli_overridden, ProxyOverride,
 };
 use crate::models::{Message, ProviderConfig};
-use log::info;
 
 /// Placeholder Claude-family model name handed to the official `claude` CLI so its
 /// local `--model` validation passes. The proxy rewrites the forwarded request's
 /// `model` field to the user-configured upstream model before calling the
 /// OpenAI-compatible backend, so this name only has to survive the CLI's own checks.
 const CLI_PLACEHOLDER_MODEL: &str = "claude-3-5-sonnet-latest";
-
-fn format_progress_line(prefix: &str, detail: &str) -> String {
-  let trimmed = detail.trim();
-  if trimmed.is_empty() {
-    String::new()
-  } else {
-    format!("\n[{prefix}] {trimmed}\n")
-  }
-}
-
-fn emit_progress_chunk(
-  progress: &mut Option<&mut (dyn FnMut(String) + Send)>,
-  chunk: impl Into<String>,
-) {
-  if let Some(progress) = progress.as_mut() {
-    (*progress)(chunk.into());
-  }
-}
-
-fn redact_secret(value: &str) -> String {
-  let trimmed = value.trim();
-  if trimmed.is_empty() {
-    return "<empty>".to_string();
-  }
-
-  let chars: Vec<char> = trimmed.chars().collect();
-  if chars.len() <= 8 {
-    return format!("{}***", chars.iter().take(3).collect::<String>());
-  }
-
-  let head: String = chars.iter().take(4).collect();
-  let tail: String = chars.iter().rev().take(4).copied().collect::<Vec<char>>().into_iter().rev().collect();
-  format!("{head}***{tail}")
-}
-
-fn log_bridge_config(provider: &ProviderConfig, config: &ProxyConfig, stage: &str) {
-  info!(
-    "[Claude Bridge] {stage}; provider_id={}; provider_name={}; base_url_source=provider.base_url; base_url={}; api_key_source=provider.api_key; api_key={}; target_model={}; cli_placeholder_model={}",
-    provider.id,
-    provider.name,
-    config.upstream_base_url,
-    redact_secret(&config.upstream_api_key),
-    config.forced_model,
-    CLI_PLACEHOLDER_MODEL,
-  );
-}
-
-fn upstream_chat_completions_url(base_url: &str) -> String {
-  format!("{}/chat/completions", base_url.trim_end_matches('/'))
-}
-
-fn emit_bridge_progress(
-  progress: &mut Option<&mut (dyn FnMut(String) + Send)>,
-  provider: &ProviderConfig,
-  config: &ProxyConfig,
-) {
-  let config_line = format_progress_line(
-    "Claude Bridge",
-    &format!(
-      "baseUrl source=provider.base_url; provider={}; baseUrl={}",
-      provider.id, config.upstream_base_url
-    ),
-  );
-  if !config_line.is_empty() {
-    emit_progress_chunk(progress, config_line);
-  }
-
-  let target_line = format_progress_line(
-    "Claude Bridge",
-    &format!(
-      "resolved upstream_url={}; apiKey source=provider.api_key; target_model={}",
-      upstream_chat_completions_url(&config.upstream_base_url),
-      config.forced_model
-    ),
-  );
-  if !target_line.is_empty() {
-    emit_progress_chunk(progress, target_line);
-  }
-}
 
 fn proxy_config_from_provider(provider: &ProviderConfig, model: &str) -> Result<ProxyConfig, String> {
   let base_url = provider
@@ -120,25 +40,9 @@ pub async fn chat_with_openai_compatible_claude_cli(
   model: &str,
   messages: &[Message],
   workspace: Option<&str>,
-  mut progress: Option<&mut (dyn FnMut(String) + Send)>,
 ) -> Result<String, String> {
   let config = proxy_config_from_provider(provider, model)?;
-  log_bridge_config(provider, &config, "resolved upstream config from client settings");
-  emit_bridge_progress(&mut progress, provider, &config);
   let proxy = start_proxy(config).await?;
-  info!(
-    "[Claude Bridge] local proxy ready; provider_id={}; local_base_url={}; auth_token={}",
-    provider.id,
-    proxy.base_url,
-    redact_secret(&proxy.auth_token),
-  );
-  let local_proxy_line = format_progress_line(
-    "Claude Bridge",
-    &format!("local proxy ready; local_base_url={}", proxy.base_url),
-  );
-  if !local_proxy_line.is_empty() {
-    emit_progress_chunk(&mut progress, local_proxy_line);
-  }
   let override_env = ProxyOverride {
     base_url: proxy.base_url.clone(),
     auth_token: proxy.auth_token.clone(),
@@ -149,7 +53,6 @@ pub async fn chat_with_openai_compatible_claude_cli(
     messages,
     workspace,
     Some(&override_env),
-    progress,
   )
   .await;
   proxy.shutdown().await;
@@ -162,14 +65,7 @@ pub async fn title_with_openai_compatible_claude_cli(
   prompt: &str,
 ) -> Result<String, String> {
   let config = proxy_config_from_provider(provider, model)?;
-  log_bridge_config(provider, &config, "resolved title upstream config from client settings");
   let proxy = start_proxy(config).await?;
-  info!(
-    "[Claude Bridge] local proxy ready for title; provider_id={}; local_base_url={}; auth_token={}",
-    provider.id,
-    proxy.base_url,
-    redact_secret(&proxy.auth_token),
-  );
   let override_env = ProxyOverride {
     base_url: proxy.base_url.clone(),
     auth_token: proxy.auth_token.clone(),

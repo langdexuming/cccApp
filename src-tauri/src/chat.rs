@@ -11,105 +11,12 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
 use crate::models::{
   AppSettings, ChatCompletionPayload, FetchProviderModelsPayload, FetchProviderModelsResponse,
   LocalToolProviderPatch, ProviderConfig, TitlePayload,
 };
-
-const CHAT_STREAM_CHUNK_EVENT: &str = "desktop-chat-chunk";
-const CHAT_STREAM_DONE_EVENT: &str = "desktop-chat-done";
-const CHAT_STREAM_ERROR_EVENT: &str = "desktop-chat-error";
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ChatStreamChunkPayload {
-  request_id: String,
-  chunk: String,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ChatStreamDonePayload {
-  request_id: String,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ChatStreamErrorPayload {
-  request_id: String,
-  error: String,
-}
-
-struct ChatStreamEmitter {
-  app: AppHandle,
-  request_id: Option<String>,
-  emitted_any_chunk: bool,
-}
-
-impl ChatStreamEmitter {
-  fn new(app: AppHandle, request_id: Option<String>) -> Self {
-    Self {
-      app,
-      request_id,
-      emitted_any_chunk: false,
-    }
-  }
-
-  fn emit_chunk(&mut self, chunk: impl Into<String>) {
-    let chunk = chunk.into();
-    if chunk.is_empty() {
-      return;
-    }
-    let Some(request_id) = self.request_id.as_deref() else {
-      return;
-    };
-
-    self.emitted_any_chunk = true;
-    let _ = self.app.emit(
-      CHAT_STREAM_CHUNK_EVENT,
-      ChatStreamChunkPayload {
-        request_id: request_id.to_string(),
-        chunk,
-      },
-    );
-  }
-
-  fn emit_done(&self) {
-    let Some(request_id) = self.request_id.as_deref() else {
-      return;
-    };
-
-    let _ = self.app.emit(
-      CHAT_STREAM_DONE_EVENT,
-      ChatStreamDonePayload {
-        request_id: request_id.to_string(),
-      },
-    );
-  }
-
-  fn emit_error(&self, error: impl Into<String>) {
-    let Some(request_id) = self.request_id.as_deref() else {
-      return;
-    };
-
-    let _ = self.app.emit(
-      CHAT_STREAM_ERROR_EVENT,
-      ChatStreamErrorPayload {
-        request_id: request_id.to_string(),
-        error: error.into(),
-      },
-    );
-  }
-
-  fn emit_final_chunk_if_needed(&mut self, text: &str) {
-    if self.request_id.is_some() && !self.emitted_any_chunk && !text.is_empty() {
-      self.emit_chunk(text.to_string());
-    }
-  }
-}
 
 fn active_provider(settings: &AppSettings) -> Result<(String, ProviderConfig), String> {
   let provider_id = settings.active_provider.clone();
@@ -2045,36 +1952,34 @@ fn text_prompt_for_title(first_message: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn chat_completion(app: AppHandle, payload: ChatCompletionPayload) -> Result<String, String> {
+pub async fn chat_completion(payload: ChatCompletionPayload) -> Result<String, String> {
   let (provider_id, provider) = active_provider(&payload.settings)?;
   let client = if provider_id == "vertex_ai" {
     build_vertex_http_client()?
   } else {
     build_http_client()?
   };
-  let mut stream = ChatStreamEmitter::new(app, payload.request_id.clone());
 
-  let result = match provider_id.as_str() {
+  match provider_id.as_str() {
     "gemini" => {
       if uses_cli(&provider) {
-        crate::gemini_cli::chat_with_gemini_cli(
+        return crate::gemini_cli::chat_with_gemini_cli(
           &provider,
           &payload.active_model,
           &payload.messages,
           payload.workspace.as_deref(),
         )
-        .await
-      } else {
-        let api_key = require_api_key(&provider)?;
-        request_gemini(
-          &client,
-          &provider,
-          &api_key,
-          &payload.active_model,
-          gemini_messages(&payload.messages),
-        )
-        .await
+        .await;
       }
+      let api_key = require_api_key(&provider)?;
+      request_gemini(
+        &client,
+        &provider,
+        &api_key,
+        &payload.active_model,
+        gemini_messages(&payload.messages),
+      )
+      .await
     }
     "vertex_ai" => {
       request_vertex_gemini_stream(
@@ -2086,13 +1991,11 @@ pub async fn chat_completion(app: AppHandle, payload: ChatCompletionPayload) -> 
       .await
     }
     "claude" => {
-      let mut on_progress = |chunk| stream.emit_chunk(chunk);
       crate::claude_cli::chat_with_claude_cli(
         &provider,
         &payload.active_model,
         &payload.messages,
         payload.workspace.as_deref(),
-        Some(&mut on_progress),
       )
       .await
     }
@@ -2107,47 +2010,32 @@ pub async fn chat_completion(app: AppHandle, payload: ChatCompletionPayload) -> 
     }
     "custom" => {
       if uses_claude_cli_bridge(&provider) {
-        let mut on_progress = |chunk| stream.emit_chunk(chunk);
-        crate::openai_compatible_claude_cli::chat_with_openai_compatible_claude_cli(
+        return crate::openai_compatible_claude_cli::chat_with_openai_compatible_claude_cli(
           &provider,
           &payload.active_model,
           &payload.messages,
           payload.workspace.as_deref(),
-          Some(&mut on_progress),
         )
-        .await
-      } else {
-        let api_key = require_api_key(&provider)?;
-        let messages = if uses_responses_api(&provider) {
-          responses_input_messages(&payload.messages)
-        } else {
-          openai_messages(&payload.messages)
-        };
-        chat_with_openai_compatible(
-          &client,
-          &provider_id,
-          &provider,
-          &api_key,
-          &payload.active_model,
-          messages,
-          payload.effort.as_deref(),
-        )
-        .await
+        .await;
       }
+      let api_key = require_api_key(&provider)?;
+      let messages = if uses_responses_api(&provider) {
+        responses_input_messages(&payload.messages)
+      } else {
+        openai_messages(&payload.messages)
+      };
+      chat_with_openai_compatible(
+        &client,
+        &provider_id,
+        &provider,
+        &api_key,
+        &payload.active_model,
+        messages,
+        payload.effort.as_deref(),
+      )
+      .await
     }
     _ => Err("未知的模型提供商".to_string()),
-  };
-
-  match result {
-    Ok(text) => {
-      stream.emit_final_chunk_if_needed(&text);
-      stream.emit_done();
-      Ok(text)
-    }
-    Err(error) => {
-      stream.emit_error(error.clone());
-      Err(error)
-    }
   }
 }
 

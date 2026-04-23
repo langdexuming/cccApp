@@ -11,6 +11,7 @@ use crate::cli_session_store;
 use crate::models::ProviderConfig;
 use crate::text_decode::{collect_decoded_output, read_decoded_line};
 
+/// Stable namespace used to derive deterministic session UUIDs per chat.
 const SESSION_NAMESPACE: Uuid = Uuid::from_bytes([
   0xb5, 0xc4, 0x2d, 0x3c, 0x9f, 0x62, 0x4f, 0xae, 0x8a, 0x3b, 0xcc, 0xf1, 0x18, 0xd0, 0x77, 0x21,
 ]);
@@ -19,30 +20,6 @@ const SESSION_NAMESPACE: Uuid = Uuid::from_bytes([
 struct CliArgs {
   args: Vec<String>,
   via_stdin: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct ProxyOverride {
-  pub base_url: String,
-  pub auth_token: String,
-}
-
-fn emit_progress_chunk(
-  progress: &mut Option<&mut (dyn FnMut(String) + Send)>,
-  chunk: impl Into<String>,
-) {
-  if let Some(progress) = progress.as_mut() {
-    (*progress)(chunk.into());
-  }
-}
-
-fn format_progress_line(prefix: &str, detail: &str) -> String {
-  let trimmed = detail.trim();
-  if trimmed.is_empty() {
-    String::new()
-  } else {
-    format!("\n[{prefix}] {trimmed}\n")
-  }
 }
 
 fn derive_session_id(chat_id: &str) -> String {
@@ -56,13 +33,14 @@ fn claude_binary() -> String {
       return trimmed.to_string();
     }
   }
-  which_claude()
+  let candidate = which_claude();
+  candidate
     .map(|p| p.to_string_lossy().to_string())
     .unwrap_or_else(|| "claude".to_string())
 }
 
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn build_claude_command(bin: &str) -> Command {
   #[cfg(windows)]
@@ -97,7 +75,6 @@ fn which_claude() -> Option<PathBuf> {
   } else {
     vec![String::new()]
   };
-
   for entry in env::split_paths(&raw) {
     for ext in &ext_list {
       let candidate = if ext.is_empty() {
@@ -120,7 +97,8 @@ fn build_args(
   user_message: &str,
   use_stdin: bool,
 ) -> CliArgs {
-  let mut args = vec!["-p".to_string()];
+  let mut args: Vec<String> = Vec::new();
+  args.push("-p".to_string());
 
   if use_stdin {
     args.push(String::new());
@@ -161,7 +139,7 @@ fn stdin_payload(user_message: &str) -> String {
       "content": [{ "type": "text", "text": user_message }],
     }
   });
-  format!("{payload}\n")
+  format!("{}\n", payload)
 }
 
 fn extract_assistant_delta(event: &Value) -> Option<String> {
@@ -188,11 +166,7 @@ fn extract_result_fallback(event: &Value) -> Option<String> {
       return Some(text.to_string());
     }
   }
-  if let Some(arr) = event
-    .get("result")
-    .and_then(|r| r.get("content"))
-    .and_then(Value::as_array)
-  {
+  if let Some(arr) = event.get("result").and_then(|r| r.get("content")).and_then(Value::as_array) {
     let mut out = String::new();
     for block in arr {
       if let Some(text) = block.get("text").and_then(Value::as_str) {
@@ -214,68 +188,23 @@ fn extract_result_fallback(event: &Value) -> Option<String> {
 fn extract_result_error(event: &Value) -> Option<String> {
   event
     .get("error")
-    .and_then(|value| match value {
-      Value::String(text) => Some(text.trim().to_string()),
-      Value::Object(map) => map
-        .get("message")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .map(str::to_string)
-        .or_else(|| {
-          map.get("error")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .map(str::to_string)
-        })
-        .or_else(|| {
-          let serialized = Value::Object(map.clone()).to_string();
-          let trimmed = serialized.trim();
-          if trimmed.is_empty() {
-            None
-          } else {
-            Some(trimmed.to_string())
-          }
-        }),
-      _ => None,
-    })
+    .and_then(Value::as_str)
+    .map(str::to_string)
     .or_else(|| {
       event
         .get("message")
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
         .map(str::to_string)
     })
+    .filter(|s| !s.trim().is_empty())
 }
 
-fn extract_api_error_status(event: &Value) -> Option<String> {
-  match event.get("api_error_status") {
-    Some(Value::String(text)) => {
-      let trimmed = text.trim();
-      if trimmed.is_empty() {
-        None
-      } else {
-        Some(trimmed.to_string())
-      }
-    }
-    Some(Value::Number(number)) => Some(number.to_string()),
-    _ => None,
-  }
-}
-
-fn extract_retry_status(event: &Value) -> Option<String> {
-  match event.get("error_status") {
-    Some(Value::String(text)) => {
-      let trimmed = text.trim();
-      if trimmed.is_empty() {
-        None
-      } else {
-        Some(trimmed.to_string())
-      }
-    }
-    Some(Value::Number(number)) => Some(number.to_string()),
-    _ => None,
-  }
+/// Optional override that redirects Claude CLI away from the provider's own Anthropic
+/// endpoint and into a locally-hosted proxy (e.g. the Anthropic→OpenAI translator).
+#[derive(Debug, Clone)]
+pub struct ProxyOverride {
+  pub base_url: String,
+  pub auth_token: String,
 }
 
 fn apply_provider_env(
@@ -323,7 +252,6 @@ fn apply_windows_git_bash_env(cmd: &mut Command) {
       return;
     }
   }
-
   let candidates = [
     r"D:\Program Files\Git\bin\bash.exe",
     r"C:\Program Files\Git\bin\bash.exe",
@@ -336,7 +264,6 @@ fn apply_windows_git_bash_env(cmd: &mut Command) {
       return;
     }
   }
-
   if let Some(path_os) = env::var_os("PATH") {
     for entry in env::split_paths(&path_os) {
       let candidate = entry.join("bash.exe");
@@ -357,9 +284,8 @@ pub async fn chat_with_claude_cli(
   model: &str,
   messages: &[crate::models::Message],
   workspace: Option<&str>,
-  progress: Option<&mut (dyn FnMut(String) + Send)>,
 ) -> Result<String, String> {
-  chat_with_claude_cli_overridden(provider, model, messages, workspace, None, progress).await
+  chat_with_claude_cli_overridden(provider, model, messages, workspace, None).await
 }
 
 pub async fn chat_with_claude_cli_overridden(
@@ -368,10 +294,9 @@ pub async fn chat_with_claude_cli_overridden(
   messages: &[crate::models::Message],
   workspace: Option<&str>,
   proxy: Option<&ProxyOverride>,
-  mut progress: Option<&mut (dyn FnMut(String) + Send)>,
 ) -> Result<String, String> {
   let user_message = last_user_message(messages)
-    .ok_or_else(|| "No user message found for Claude CLI request.".to_string())?;
+    .ok_or_else(|| "对话中没有待发送的用户消息。".to_string())?;
   let base_seed = messages
     .first()
     .map(|m| m.id.as_str())
@@ -380,45 +305,13 @@ pub async fn chat_with_claude_cli_overridden(
   let seed = cli_session_store::session_seed(base_seed, workspace);
   let session_id = derive_session_id(&seed);
   let first_turn = is_first_turn(messages);
-
-  match invoke_claude_cli(
-    provider,
-    model,
-    &session_id,
-    first_turn,
-    user_message,
-    workspace,
-    proxy,
-    &mut progress,
-  )
-  .await
-  {
+  match invoke_claude_cli(provider, model, &session_id, first_turn, user_message, workspace, proxy).await {
     Ok(text) => Ok(text),
     Err(err) if first_turn && err.contains("already in use") => {
-      invoke_claude_cli(
-        provider,
-        model,
-        &session_id,
-        false,
-        user_message,
-        workspace,
-        proxy,
-        &mut progress,
-      )
-      .await
+      invoke_claude_cli(provider, model, &session_id, false, user_message, workspace, proxy).await
     }
     Err(err) if !first_turn && looks_like_missing_session(&err) => {
-      invoke_claude_cli(
-        provider,
-        model,
-        &session_id,
-        true,
-        user_message,
-        workspace,
-        proxy,
-        &mut progress,
-      )
-      .await
+      invoke_claude_cli(provider, model, &session_id, true, user_message, workspace, proxy).await
     }
     Err(err) => Err(err),
   }
@@ -447,8 +340,7 @@ pub async fn title_with_claude_cli_overridden(
   proxy: Option<&ProxyOverride>,
 ) -> Result<String, String> {
   let session_id = Uuid::new_v4().to_string();
-  let mut progress = None;
-  invoke_claude_cli(provider, model, &session_id, true, prompt, None, proxy, &mut progress).await
+  invoke_claude_cli(provider, model, &session_id, true, prompt, None, proxy).await
 }
 
 async fn invoke_claude_cli(
@@ -459,10 +351,9 @@ async fn invoke_claude_cli(
   user_message: &str,
   workspace: Option<&str>,
   proxy: Option<&ProxyOverride>,
-  progress: &mut Option<&mut (dyn FnMut(String) + Send)>,
 ) -> Result<String, String> {
   if user_message.trim().is_empty() {
-    return Err("Claude CLI requires a non-empty user message.".to_string());
+    return Err("消息内容为空，无法发送到 Claude CLI。".to_string());
   }
 
   let use_stdin = should_use_stdin(user_message);
@@ -485,14 +376,14 @@ async fn invoke_claude_cli(
 
   let mut child = cmd
     .spawn()
-    .map_err(|err| format!("Failed to spawn Claude CLI process: {err}"))?;
+    .map_err(|err| format!("启动 Claude CLI 失败：{err}（二进制：{bin}）"))?;
 
   if built.via_stdin {
     if let Some(mut stdin) = child.stdin.take() {
       let payload = stdin_payload(user_message);
       if let Err(err) = stdin.write_all(payload.as_bytes()).await {
         let _ = child.kill().await;
-        return Err(format!("Failed to write Claude CLI stdin: {err}"));
+        return Err(format!("写入 Claude CLI stdin 失败：{err}"));
       }
       drop(stdin);
     }
@@ -501,11 +392,11 @@ async fn invoke_claude_cli(
   let stdout = child
     .stdout
     .take()
-    .ok_or_else(|| "Claude CLI stdout pipe was unavailable".to_string())?;
+    .ok_or_else(|| "Claude CLI 未提供 stdout，无法读取响应。".to_string())?;
   let stderr = child
     .stderr
     .take()
-    .ok_or_else(|| "Claude CLI stderr pipe was unavailable".to_string())?;
+    .ok_or_else(|| "Claude CLI 未提供 stderr。".to_string())?;
 
   let stderr_task = tokio::spawn(async move { collect_decoded_output(stderr, 8192).await });
 
@@ -516,16 +407,12 @@ async fn invoke_claude_cli(
   let mut result_error: Option<String> = None;
   let mut non_json_stdout = String::new();
   let mut result_api_error: Option<String> = None;
-  let mut last_retry_status: Option<String> = None;
-  let mut last_retry_error: Option<String> = None;
-  let mut last_progress_line: Option<String> = None;
 
   while let Ok(Some(raw_line)) = read_decoded_line(&mut reader, &mut line_buf).await {
     let trimmed = raw_line.trim();
     if trimmed.is_empty() {
       continue;
     }
-
     let event: Value = match serde_json::from_str(trimmed) {
       Ok(value) => value,
       Err(_) => {
@@ -536,12 +423,10 @@ async fn invoke_claude_cli(
         continue;
       }
     };
-
     let event_type = event.get("type").and_then(Value::as_str).unwrap_or("");
     match event_type {
       "assistant" => {
         if let Some(delta) = extract_assistant_delta(&event) {
-          emit_progress_chunk(progress, delta.clone());
           accumulated.push_str(&delta);
         }
       }
@@ -553,11 +438,14 @@ async fn invoke_claude_cli(
         let is_success_subtype = subtype.eq_ignore_ascii_case("success");
         let is_error_flag = event.get("is_error").and_then(Value::as_bool).unwrap_or(false);
         let has_error_string = extract_result_error(&event).is_some();
+
         let fallback_text = extract_result_fallback(&event);
 
         if is_success_subtype && !is_error_flag {
-          if let Some(text) = fallback_text.clone().filter(|text| !text.trim().is_empty()) {
-            fallback = Some(text);
+          if let Some(text) = fallback_text.clone() {
+            if !text.trim().is_empty() {
+              fallback = Some(text);
+            }
           }
           result_error = None;
           result_api_error = None;
@@ -566,59 +454,29 @@ async fn invoke_claude_cli(
             fallback = fallback_text.clone();
           }
           let detail = extract_result_error(&event)
-            .or_else(|| fallback_text.clone().filter(|value| !value.trim().is_empty()))
+            .or_else(|| {
+              fallback_text
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+            })
             .unwrap_or_else(|| {
               if subtype.is_empty() {
-                "Claude CLI returned an error.".to_string()
+                "Claude CLI 上游返回错误".to_string()
               } else {
-                format!("Claude CLI returned an error (type={subtype})")
+                format!("Claude CLI 上游返回错误（subtype={subtype}）")
               }
             });
           result_error = Some(detail);
           if result_api_error.is_none() {
-            result_api_error = extract_api_error_status(&event);
+            result_api_error = event
+              .get("api_error_status")
+              .and_then(Value::as_str)
+              .filter(|s| !s.trim().is_empty())
+              .map(str::to_string);
           }
-          let detail_line =
-            format_progress_line("Claude CLI", result_error.as_deref().unwrap_or_default());
-          if !detail_line.is_empty() && last_progress_line.as_deref() != Some(detail_line.as_str()) {
-            emit_progress_chunk(progress, detail_line.clone());
-            last_progress_line = Some(detail_line);
-          }
-        } else if fallback.is_none() {
-          fallback = fallback_text;
-        }
-      }
-      "system" => {
-        let subtype = event.get("subtype").and_then(Value::as_str).unwrap_or("");
-        if subtype.eq_ignore_ascii_case("api_retry") {
-          if let Some(status) = extract_retry_status(&event) {
-            last_retry_status = Some(status);
-          }
-          if let Some(error) = event
-            .get("error")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-          {
-            last_retry_error = Some(error);
-          }
-          let mut detail_parts = Vec::new();
-          if let Some(status) = last_retry_status.as_deref() {
-            detail_parts.push(format!("status={status}"));
-          }
-          if let Some(error) = last_retry_error.as_deref() {
-            detail_parts.push(format!("error={error}"));
-          }
-          let detail = if detail_parts.is_empty() {
-            "upstream retry".to_string()
-          } else {
-            format!("upstream retry ({})", detail_parts.join(", "))
-          };
-          let progress_line = format_progress_line("Claude CLI", &detail);
-          if !progress_line.is_empty() && last_progress_line.as_deref() != Some(progress_line.as_str()) {
-            emit_progress_chunk(progress, progress_line.clone());
-            last_progress_line = Some(progress_line);
+        } else {
+          if fallback.is_none() {
+            fallback = fallback_text;
           }
         }
       }
@@ -629,7 +487,7 @@ async fn invoke_claude_cli(
   let status = child
     .wait()
     .await
-    .map_err(|err| format!("Failed to wait for Claude CLI process: {err}"))?;
+    .map_err(|err| format!("等待 Claude CLI 结束失败：{err}"))?;
   let stderr_text = stderr_task.await.unwrap_or_default();
 
   let text = if !accumulated.trim().is_empty() {
@@ -654,29 +512,17 @@ async fn invoke_claude_cli(
           None
         }
       })
-      .or_else(|| match (last_retry_status.as_deref(), last_retry_error.as_deref()) {
-        (Some(status), Some(error)) => Some(format!("upstream retry failed (status={status}, error={error})")),
-        (Some(status), None) => Some(format!("upstream retry failed (status={status})")),
-        (None, Some(error)) => Some(format!("upstream retry failed (error={error})")),
-        (None, None) => None,
-      })
-      .unwrap_or_else(|| format!("Claude CLI exited with non-zero status ({status})"));
-    return Err(format!("Claude CLI call failed: {combined}"));
+      .unwrap_or_else(|| format!("Claude CLI 以非零状态退出（{}）", status));
+    return Err(format!("Claude CLI 调用失败：{combined}"));
   }
 
   if let Some(err) = result_error.clone() {
     if text.trim().is_empty() {
       let extra = result_api_error
         .as_deref()
-        .map(|s| format!(" (api_error_status={s})"))
+        .map(|s| format!("（api_error_status={s}）"))
         .unwrap_or_default();
-      let retry_extra = match (last_retry_status.as_deref(), last_retry_error.as_deref()) {
-        (Some(status), Some(error)) => format!(" (last_retry_status={status}, last_retry_error={error})"),
-        (Some(status), None) => format!(" (last_retry_status={status})"),
-        (None, Some(error)) => format!(" (last_retry_error={error})"),
-        (None, None) => String::new(),
-      };
-      return Err(format!("Claude CLI returned error: {err}{extra}{retry_extra}"));
+      return Err(format!("Claude CLI 返回错误：{err}{extra}"));
     }
   }
 
@@ -684,12 +530,12 @@ async fn invoke_claude_cli(
     let stderr_err = stderr_text.trim();
     let stdout_err = non_json_stdout.trim();
     if !stdout_err.is_empty() {
-      return Err(format!("Claude CLI returned no parsable output. Raw stdout: {stdout_err}"));
+      return Err(format!("Claude CLI 未返回内容：{stdout_err}"));
     }
     if !stderr_err.is_empty() {
-      return Err(format!("Claude CLI returned no parsable output. Raw stderr: {stderr_err}"));
+      return Err(format!("Claude CLI 未返回内容：{stderr_err}"));
     }
-    return Err("Claude CLI returned no parsable output.".to_string());
+    return Err("Claude CLI 返回了空内容。".to_string());
   }
 
   Ok(text)
@@ -787,33 +633,6 @@ mod tests {
     )
     .unwrap();
     assert_eq!(extract_result_fallback(&event).as_deref(), Some("XY"));
-  }
-
-  #[test]
-  fn result_error_reads_nested_error_message() {
-    let event: Value = serde_json::from_str(
-      r#"{"type":"result","error":{"message":"upstream model not found"}}"#,
-    )
-    .unwrap();
-    assert_eq!(
-      extract_result_error(&event).as_deref(),
-      Some("upstream model not found")
-    );
-  }
-
-  #[test]
-  fn api_error_status_reads_numeric_values() {
-    let event: Value = serde_json::from_str(r#"{"type":"result","api_error_status":429}"#).unwrap();
-    assert_eq!(extract_api_error_status(&event).as_deref(), Some("429"));
-  }
-
-  #[test]
-  fn retry_status_reads_numeric_values() {
-    let event: Value = serde_json::from_str(
-      r#"{"type":"system","subtype":"api_retry","error_status":503}"#,
-    )
-    .unwrap();
-    assert_eq!(extract_retry_status(&event).as_deref(), Some("503"));
   }
 
   #[test]

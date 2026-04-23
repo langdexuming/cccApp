@@ -155,8 +155,6 @@ pub struct ChatCompletionPayload {
   pub effort: Option<String>,
   #[serde(default)]
   pub workspace: Option<String>,
-  #[serde(default)]
-  pub request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
